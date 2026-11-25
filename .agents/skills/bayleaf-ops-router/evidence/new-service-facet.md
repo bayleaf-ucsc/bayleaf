@@ -1,0 +1,202 @@
+# Run evidence: new-service-facet
+
+Dated record of past runs of [`new-service-facet.md`](../playbooks/new-service-facet.md), newest first unless noted.
+Consult for diagnosis; current procedure lives in the linked file.
+
+- 2026-11-11 (Rooms #159, deployed to campus): Spike, then four AX playtests, then a binding
+  `DESIGN.md` let four directory-scoped subagents build Worker, API, telemetry and docs in
+  parallel; one RPC method list was the integration check. Before the API deploy, compare
+  live vars and main's commits, and carry main-only code into the worktree rather than
+  merging. A collector writer map is replace-only: re-put the whole map from the operator's
+  local `.dev.vars.production.json`, cross-checked against each service's token file, and
+  deploy the new source's policy before the map names it. New zones need a Workers Custom
+  Domain (Wrangler OAuth lacks DNS write); local negative DNS caching can hide it for 30 min.
+
+- 2026-10-24 (computer-use, local only): Existing owner auth and sandbox provider
+  carry screenshot/input transit without new storage or a new provider. Separate
+  API transit posture from persistent guest/agent history; activation remains an
+  explicit managed-app operation. No deployment or adapter exposure inferred.
+  Subsequent approved API/frontend rollout passed spec/auth smoke only;
+  functional live API qualification and all client adapters remain deferred.
+
+- 2026-10-21 (Inboxes TTL + SSE release): Inspect the actual traffic version,
+  not historical qualification IDs. A newer source-default API deploy had disabled
+  the pilot. Preserve published production adapter pins when local submodule HEADs
+  are unpublished; compare built bundles and all live variables before deployment.
+  Migrate receiver storage first, receiver second, API last; confirm real SSE
+  self-post/resume/termination and zero residual smoke credentials without content logs.
+
+- 2026-10-21 (Inboxes TTL preparation, rollout held for SSE): Bound newly added
+  sweep admission separately from existing cleanup and test backlog progress with
+  telemetry enabled. Fresh expiry filtering must preserve SQL pagination progress.
+  No migration/deployment occurred before the scope changed to a combined release.
+
+- 2026-10-20 (#113 rollout): Compare all staged API variables to live metadata;
+  source defaults intentionally differ from the operator-only Inboxes deployment.
+  Verify arrival records from real browser executions, not direct synthetic POSTs.
+  Start diagnostic return-cookie expiry with OAuth to handle old interstitials.
+
+- 2026-10-20 (#113 diagnostics, local): Keep passive owner views on the existing
+  API identity origin rather than cloning cross-domain sessions. Sandboxes login
+  has an explicit wake side effect, unsuitable for diagnostic login. Preview
+  recovery must shed tenant host/path/query before instrumented apex HTML.
+
+- 2026-10-20 (Daytona activation): OTLP base URLs append `/v1/{signal}`; qualify
+  the path prefix, not only a root test receiver. Svix SDK 2.8.0 handles scoped
+  portal-token routing and uses `event_types`; refresh Daytona endpoint presence
+  after direct endpoint updates. Browser menus can fail while ordinary forms work.
+
+- 2026-10-20 (Daytona qualified): Live CPU unit is `{cpu}`; state updates can
+  repeat unchanged states. Timers can keep an old qualification actor's code
+  resident during deploy: use fresh actor IDs and revision-bearing readback.
+
+- 2026-10-20 (Daytona live qualification): Sandbox access did not prove OTLP
+  settings access (403). Webhook initialization 404 was not a permission verdict:
+  after owner initialization, the existing key could issue scoped portal access.
+  Verify actual operations rather than inferring the capability graph from scopes.
+
+- 2026-10-20 (Daytona telemetry, local preparation): Provider-wide OTLP export
+  combines useful organization gauges with sandbox metrics/logs/traces. Storage
+  minimization is not source minimization: gate transient transport exposure
+  separately, and require real exporter/signature qualification before activation.
+
+- 2026-10-20 (telemetry activation, #112): DO spec updates reuse source unless
+  `--update-sources` is requested; verify the deployed component commit. Python
+  ingress needed a telemetry-host-only Browser Integrity Check exception. Native
+  source minimization required a pinned rung-4 artifact and cumulative export
+  paging; full-container checks caught concerns that decoder fixtures could not.
+
+- 2026-10-20 (telemetry local proof, #112): Split collector/D1, real OTLP
+  qualification and source adapters into parallel owned directories, then test
+  their shared wire contracts. Local implementation is a useful stopping point
+  before production exposure. D1 Time Travel extends recoverability beyond SQL
+  expiry; collection kill switches must not disable scheduled expiry. Billing
+  usage reads returned 403, so zone subscriptions were not treated as evidence
+  of Workers allowances or zero incremental cost.
+
+- 2026-10-13 (decision inference rollout): Wrangler's BayLeaf-scoped OAuth could
+  read D1 when the cf profile could not. Rechecked empty tables, applied 0016 and
+  deployed; live HTTP/model-set checks passed. The caller was campus-eligible,
+  so the smoke test now assesses network eligibility instead of assuming off-campus.
+
+- 2026-10-13 (decision inference, local): A new inference operation shares existing
+  backend enablement and allowances; no independent operation switch. Expanded the
+  OpenRouter output-modality catalog and invalidated text-only negative verdicts.
+
+- 2026-10-11 (Campus Pass availability): A public, passive metadata endpoint reused
+  existing auth/quota/provider boundaries, so no new provider, storage, or kill switch
+  was needed. Pre-deploy Astra review caught malformed-metadata false positives.
+  Browser qualification caught mandatory reasoning exhausting a tiny output cap;
+  integration examples now leave token headroom and handle empty answers explicitly.
+
+- 2026-10-05 (Sandboxes teaser): Created `sandbox/` as a separate Worker with
+  an explicit BayLeaf account and custom domain. Static public overview now,
+  shared API authentication/D1/lifecycle integration later. New custom-domain
+  requests briefly returned 1104 during propagation, then GET/HEAD and browser
+  rendering succeeded. No provider, inference, or data-storage changes needed.
+
+- 2026-10-05 (sandbox plugin): Used a separate BayLeaf Git repository and a
+  submodule-derived full commit pin instead of npm publication. Push the plugin
+  before Worker deployment; the main repo stays uncommitted during evaluation.
+  Verified Git installation in isolated V2; hosted browser verification requires
+  the owner's authenticated dashboard session.
+
+- 2026-09-29 (standard-backend grants): Separated BayLeaf token authority from
+  OpenRouter-specific eligibility. Full catalog discovery preserves prefixes,
+  and synthetic enabled-backend tests cover Vertex/Bedrock routing, disabled
+  flags, and shared atomic per-user limits. No provider was enabled in production.
+  The alternate counters previously used read/check/update and could exceed their
+  cap under concurrent calls; conditional SQL now consumes the final slot once.
+
+- 2026-09-29 (named-token rollout): Applied additive migration 0012, deployed
+  the integrated dashboard card and curated dropdown, and verified live named
+  token creation/revocation. Existing unnamed credentials remain compatible.
+  llms.txt reorganization remains explicitly deferred at Adam's request.
+
+- 2026-09-29 (named-token follow-up): User-facing terminology is “temporary
+  inference token”; “grant” remains the permission/protocol term. Moved management
+  into a standalone main-dashboard card, carrying over no-store/framing headers.
+  Public recognition names need per-owner uniqueness only; signatures bind names
+  to credentials, and expiry cleanup releases names without a history ledger.
+  Chromium verified clipboard copy and no credential in DOM; the embedded preview
+  denied clipboard permission and exercised the safe error path. Placement and
+  the corresponding llms.txt reorganization remain subject to Adam's feedback.
+
+- 2026-09-29 (rollout): At Adam's request, applied migration 0011 and deployed
+  the grant facet. `cf` verified the BayLeaf account; the existing Wrangler
+  build/deploy workflow handled migration and upload. Live descriptor validation
+  and dashboard create/revoke passed using the existing browser login. Fresh
+  CILogon and real disposable-token inference remain unqualified.
+
+- 2026-09-29: Disposable inference grants (#76) were implemented and tested
+  locally behind a disabled flag. Signed client descriptors avoid a permanent
+  app registry; ephemeral grant/transaction tables still require a retention
+  disclosure. Browser form testing caught Referrer-Policy suppressing Origin,
+  which synthetic HTTP checks alone did not exercise. Live rollout remains gated.
+
+- 2026-09-20: Preview hostnames became `{cruzid}-{access}-{nonce}` after
+  production use showed that ownership and the agent-selected access policy
+  must remain legible when a URL leaves its initiating conversation. The nonce
+  remains the service-worker/browser-state isolation boundary; the umbrella
+  domain supplies branding, so no application tag is published.
+
+- 2026-09-17: Issue #71's local preview POC needed distinct user-key and
+  installation-key authority, plus a two-host browser proof before owner login.
+  Miniflare's own Origin rejection initially masked gateway checks; synthetic
+  browser headers must reach the actual handler. Live qualification additionally
+  found Daytona's actual signed-host suffix differed from its docs, and redirects
+  may already use the protected origin. Wrangler OAuth lacked DNS-write scope;
+  the authenticated browser handled DNS. Toolkit dogfooding remains a later gate.
+- 2026-09-17 (interactive applications): code-server 4.137.0 loaded but then hit
+  the existing 1-GiB sandbox's OOM limit. A disposable 4-GiB test confirmed terminal
+  execution. Custom resource shapes required `buildInfo`; the default snapshot
+  rejected cpu/memory overrides. Deletion lingered in `destroying` for minutes,
+  so the tracked ID was retained until per-ID 404. Durable Object alarms handle
+  live socket expiry; browser cookie support is explicitly server-managed only.
+- 2026-09-17 (then-final naming): Adam chose fresh `{cruzid}-{nonce}` origins with no
+  visible port or stable alias. Root-scoped service workers are now permitted
+  within a generation; cached content can outlive network access. D1 retirement
+  triggers preserve socket invalidation under concurrent re-registration.
+
+- 2026-09-08: Unified probe deployment used ordinary 30-day sign-in, not a signing
+  secret or long-lived minted JWT. Local Wrangler startup failure did not block
+  authorized production qualification. Browser work needed its own 55-second
+  deadline to preserve the existing HTTP monitor's 25-second contract; independent
+  observation confirmed exact synthetic deletion for both live GET and HEAD.
+
+- 2026-09-07: `chat/probe/` adds an operational Worker hostname, not a public
+  service. Its fixed synthetic content uses the existing Chat/OpenRouter path;
+  no new human-content subprocessor or public-site page was introduced. Scoped
+  credentials, authenticated HEAD timing, rate/deadline guards, and a kill switch
+  were the relevant gates. A non-admin probe exposed missing base-model grants
+  that an admin smoke test had missed. UptimeRobot setup remains a human handoff;
+  do not claim its collection or alerts verified from Worker tests alone.
+
+- 2026-08-25: stub drafted; issue #65's own description is unfinished. First
+  real run should rewrite this file.
+- 2026-09-01: A generic local client proxy for the existing Sealed lane did not
+  constitute a new service facet: it reused the lane's data flow, disclosure,
+  limits, and kill switch. Reserve this playbook for new server-side surfaces
+  or materially new data flows, not client adapters.
+- 2026-09-03: Splitting OpenCode onboarding into Standard and Sealed login URLs
+  likewise reused existing data flows and controls. A new discovery URL alone
+  is not a new service facet; only the human ship gate and route verification
+  applied.
+- 2026-11-01: HF artifact gateway (#121) shipped as a real new facet behind the
+  `HF_GATEWAY_ENABLED` kill switch, with a new R2 store of public artifacts only.
+  Research before implementation replaced the issue's per-request proxy hypothesis
+  with mirror-ahead (cron to R2). Exposure matrix lives in api/HF-GATEWAY.md; no
+  telemetry was added.
+
+## Moved from the playbook body
+
+Frontmatter description:
+
+> description: Add a new service or API facet (new lane, connection, subdomain, or capability). Rough stub; the source issue (#65) itself trails off mid-thought.
+
+When to use:
+
+> **Honesty note:** issue #65 lists this workflow as "Adding a new service or
+> API facet. ..." with the sentence unfinished. This playbook is a stub built
+> from repo conventions; the refinement log should record what the real
+> workflow turns out to be.

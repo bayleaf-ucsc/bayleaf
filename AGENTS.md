@@ -199,12 +199,15 @@ UptimeRobot's maximum timeout; see the probe guide before enabling alerts.
 
 `.agents/skills/` holds repo-specific skills, currently the
 `bayleaf-ops-router` operations playbooks (issue #65). These are
-**experimental and unproven**: most have never guided a real run. Expect to
-deviate from them, and treat every deviation as data — after finishing a
-workflow, record what differed in the playbook's refinement log and fix any
-step that reality contradicted (the router's own instructions say the same).
-They will earn their keep only through practice, not by being followed
-faithfully.
+**experimental**: many are still rough. Expect to deviate from them, and treat
+every deviation as data. After finishing a workflow, fix any step that reality
+contradicted, in the playbook itself. They will earn their keep only through
+practice, not by being followed faithfully.
+
+Keep process and evidence apart: skills and playbooks hold only current,
+reusable procedure. Dated run notes, deployment ids and results go in a sibling
+`evidence/` file, read only for diagnosis. Promote any lesson the next run needs
+into the procedure before recording the run.
 
 ---
 

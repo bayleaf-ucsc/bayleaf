@@ -27,7 +27,7 @@ Updated files:
 - `api/package.json`: `test:computer` command.
 - `api/AGENTS.md`: maintenance pointers and content-handling invariant.
 - `.agents/skills/bayleaf-ops-router/playbooks/bayleaf-powered-agent-capabilities.md`
-  and `new-service-facet.md` in that same directory: refinement log entries.
+  and `new-service-facet.md` in that same directory: run evidence entries (now in `../evidence/`).
 
 ## Scope and design
 

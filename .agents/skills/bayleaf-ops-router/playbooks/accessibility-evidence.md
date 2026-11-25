@@ -1,7 +1,7 @@
 ---
 source-skill: bayleaf-ops-router
 description: Capture, inspect, retain, and document bounded accessibility evidence for BayLeaf web interfaces.
-status: First Chat keyboard-flow run completed; screen-reader procedure remains untested
+status: practiced for Chat keyboard flows; screen-reader procedure remains untested
 last-reviewed: 2026-09-15
 ---
 
@@ -122,13 +122,3 @@ Commit the harness, lockfile, reviewed MP4/manifest, ACR edits, and this playboo
 as one coherent `add:` or `update:` commit. Never commit credentials, bootstrap
 files, raw rrweb archives, browser profiles, or unreviewed failed-run artifacts.
 Do not push without explicit approval.
-
-## Refinement Log
-
-- 2026-09-15: First production Chat run exercised a two-turn Basic conversation
-  and keyboard-driven deletion. Reverse traversal did not shorten the composer
-  path (12 `Shift+Tab` presses), but bounded answers kept the 34.64-second video
-  compact. The deployed delete shortcut failed, the collapsed sidebar hid its
-  menu, and the visible navbar Chat actions path succeeded. API verification and
-  cleanup remained independent from the UI claim. Raw rrweb retention was
-  rejected after inspection because the archive captures the full rendered DOM.

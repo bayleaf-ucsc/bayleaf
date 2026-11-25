@@ -1,7 +1,7 @@
 ---
 source-skill: bayleaf-ops-router
 description: Measure retained Chat message rates before tuning submission limits, without exporting conversation text.
-status: practiced
+status: practiced; saved script's live-valve path not yet rerun against production
 last-reviewed: 2026-10-27
 ---
 
@@ -81,8 +81,7 @@ admission log, a count of provider completions, or a token/cost measure.
   different OWUI release.
 
 At most two reads run concurrently, with a 10,000-read budget and bounded
-transient HTTP retries. The first run needed about 1,250 reads for 586 accounts
-and 643 retained chats. Rate-limit or transport failures are not partial success.
+transient HTTP retries. Rate-limit or transport failures are not partial success.
 Raw identifying timestamps exist only in process memory, not persisted exports.
 No LLM processing or external analytics service is used.
 
@@ -126,16 +125,6 @@ compatibility. There is no production rollback because analysis changes nothing.
 Discard private intermediate outputs when no longer needed; do not preserve raw
 data beyond its source retention merely to make future analysis easier.
 
-After a run, append a short refinement entry with coverage/caveats and recipe
-changes. Record code/docs as `add: retain Chat rate-limit analytics recipe`,
+After a run, note coverage/caveats and fix this recipe where it was wrong.
+Record code/docs as `add: retain Chat rate-limit analytics recipe`,
 only with explicit commit/push approval. No user identities or raw results in git.
-
-## Refinement log
-
-- 2026-10-27: Initial read-only metadata scan covered 586 accounts and 643 chats;
-  excluded the synthetic probe and deduplicated 38 message IDs (one conflicting
-  timestamp). No raw message text or identifying rows persisted. Compared 30/90
-  days and user/assistant proxies; saved the rerunnable script with live-valve
-  discovery and deterministic duplicate handling. The original scan used fixed
-  thresholds; the saved script's live-valve path has synthetic tests but has not
-  been rerun against production. No limit change was authorized by this analysis.

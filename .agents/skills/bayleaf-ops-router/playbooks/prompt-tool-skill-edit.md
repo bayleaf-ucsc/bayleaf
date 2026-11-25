@@ -55,6 +55,22 @@ deploy <file> <id>` (or `functions deploy`). The repo loop is nearly as fast
 and the repo stays the source of truth. Docstrings especially: they are the
 model's tool documentation; edit them like prompts, but in the repo.
 
+- Compare live source with the repo before deploying. `tools show` omits source;
+  use `tools pull`. Deploys keep the live name and description, so synchronize a
+  changed description through the update endpoint without touching grants or
+  valves.
+- Afterward confirm exact source and schemas, and unchanged valves, grants and
+  model bindings.
+- Valve-only changes need no source deployment. Commit only reviewed non-secret
+  overrides (`valves.public.json`) and merge them into the live valves. Full
+  valve exports contain credentials and stay private.
+- Renaming an ID is a migration: create the new ID, copy valves in memory, rebind
+  models, and retire the old ID only after confirming nothing references it.
+- To retire a tool or function, privately snapshot source, metadata and valves,
+  then check bindings through `/api/v1/models/export` (the CLI model list mixes in
+  provider models with no stored row). Then delete it and remove its repo source
+  and DESIGN entries.
+
 **Skills** also use the repo loop. Edit both `chat/skills/<id>/skill.md` and
 `meta.json` when discovery metadata changes, then push with `owui-cli skills
 deploy <skill.md> <id>`. The current CLI preserves an existing skill's live
@@ -76,7 +92,9 @@ live fields. Always verify with `owui-cli skills pull <id>`.
 2. **[HUMAN GATE]** Manual playtest in prod: the user runs a real conversation
    that exercises the changed behavior. Prompts especially: what reads well
    and what the model actually does are different things; only playtesting
-   reveals the difference.
+   reveals the difference. A bare completion call that returns a tool call has not
+   executed it. Where non-admins are the audience, playtest as one: a model-bound
+   tool without a tool-level grant is silently skipped.
 3. Pull the result back per `backup-reconcile.md` (for UI-edited prompts this
    is the only way the change reaches git). For repo-first prompts, compare the
    live readback and pulled backup with the reviewed repo file. Diff, triage,
@@ -87,7 +105,8 @@ live fields. Always verify with `owui-cli skills pull <id>`.
 
 - Playtest (manual, above).
 - For repo-first prompts: only the intended decoded-prompt lines changed;
-  other parsed model fields are untouched, and live readback matches.
+  other parsed model fields are untouched, and live readback matches. Omitted
+  capabilities read back as null; check effective inheritance in `/api/models`.
 - Backup pull shows the intended diff and nothing else. A live readback alone
   does not complete the backup-reconcile step.
 
@@ -98,144 +117,3 @@ redeploy; for a skill metadata rollback, also synchronize the prior description
 through the update endpoint. For UI-edited prompts, paste the previous prompt back in
 the UI (recover it from git: `git show HEAD:chat/models/<id>/model.json`), or
 `uvx owui-cli models update` the checked-out file.
-
-## Refinement log
-
-- 2026-10-27: Deactivated and un-globalized the depth-limit filter, preserving
-  source and valves. Private before/after snapshots confirmed no model bindings,
-  unchanged model exports and other function metadata. Basic's actual prompt had
-  no depth warning, despite stale DESIGN prose, so no prompt deployment was needed.
-
-- 2026-10-27: Removed Basic's function-calling, capability and builtin-tool
-  overrides after verifying v0.12.3 native fallback and metadata inheritance.
-  Stored-model readback returns omitted capabilities as null; `/api/models`
-  verified effective inheritance. Avatar bytes and retained settings matched;
-  full private before/after resource pulls changed only Basic. Adam confirmed
-  the live conversation playtest works the same day.
-
-- 2026-10-06: Valve-only Lathe provisioning change needed no source deployment.
-  Saved only the two non-secret overrides in `valves.public.json`, merged into
-  live valves through CLI stdin, and verified all other values unchanged. Full
-  valve backups contain credentials and must not enter the public repo. Missing-
-  sandbox message delivery in a real conversation remains a human playtest.
-
-- 2026-09-30: Deployed Drive v0.2.0 image viewing after live Google image/slide
-  retrieval and 36 offline tests. Source and all seven generated schemas matched;
-  valves, grants and model configuration were unchanged and health returned 200.
-  Adam subsequently confirmed the production vision playtest works. Independent
-  provider-payload inspection and exported-transcript image verification remain
-  distinct, unverified checks.
-
-- 2026-09-30: Retired unbound Brace2 toolkit/filter/action after comparing live
-  source to Git and saving a private source/metadata/valve snapshot. Use the
-  stored-model `/api/v1/models/export` inventory for binding checks: the CLI's
-  model list also includes discovered provider models that have no stored row.
-  Verified legacy absence and unchanged Brace3 metadata/valves/model bindings.
-
-- 2026-09-30: Drive v0.1.2 makes search's folder required in both the generated
-  schema and runtime validation, removing global search while retaining explicit
-  one-level traversal. Twenty-five tests and live source/schema readback passed;
-  credential, grants and model configuration were preserved.
-
-- 2026-09-30: Drive playtesting exposed a non-permission 403: Google rejects
-  `orderBy` with `fullText` queries. Inspected the upstream error rather than
-  accepting the model's sharing explanation; fixed query construction/error
-  classification, verified the exact live search and deployed v0.1.1 with
-  unchanged schemas/valves/grants/model. Twenty-four offline tests passed.
-
-- 2026-09-30: Deployed Brace3 Drive with one shared service-account valve and
-  seven explicit schemas; copied the legacy key in memory and preserved existing
-  model bindings. `valves-set-field-file ... -` failed in this run; JSON stdin to
-  `valves-set` worked. Source/schema/valve/grant/binding readback passed; successful
-  fixture reads and human/non-admin playtesting remain separate pending checks.
-
-- 2026-09-30: Human playtesting motivated GitHub v0.2.0 account-repository
-  discovery and template/fork provenance. Verified real template links with
-  anonymous GitHub metadata and treated absent origin as inconclusive. Thirty
-  local tests passed; approved deployment readback matched eleven schemas and
-  source, with unchanged valves, grants and model configuration. Adam confirmed
-  production playtesting works as expected; non-admin and export checks remain separate.
-
-- 2026-09-30: Created and bound Brace3's public-only GitHub toolkit with a
-  course-scoped credential map. Anonymous visibility checks precede token use;
-  source/schema/valve/grant/model readbacks passed. Bare OWUI completion smoke
-  tests returned named tool calls without executing them: schema selection is
-  not an end-to-end playtest. Non-admin browser execution remains a human gate.
-
-- 2026-09-30: Deployed the Brace3 2.0.3 docstring follow-up after ten local checks.
-  Compared live source with the prior deployment snapshot before writing; pulled
-  source and schemas back and verified unchanged grants/valves. This updates
-  pedagogical and citation guidance only, not quiz content-item retrieval.
-- 2026-09-30: Brace3's jq-to-named-tools migration needed a matching instruction
-  change in the Canvas-hosted prompt; Adam made that change himself. Live Canvas
-  shapes exposed unpublished staff material and instructor-only quiz fields, so
-  student-view projections and publication checks were tested before deployment.
-  `tools show` omits source (use `tools pull` separately); generated no-argument
-  schemas omit `required` rather than returning an empty list. Source/schema
-  readback and preserved grants/valves passed; fresh-chat human playtest is pending.
-- 2026-09-28: Follow-up on the Basic Canvas-link edit: retyping the entire
-  JSON-encoded prompt line to add one sentence was error-prone and unreadable
-  in review. Agent-driven prompt edits should extract text, patch the text,
-  reinsert with a checked JSON transform, and review the decoded prompt diff.
-  Live readback in that run did not replace the pending human playtest or full
-  backup pull; this playbook now makes those boundaries explicit.
-- 2026-09-28: Basic's live prompt matched the repo before a narrow Canvas-link
-  handoff edit, so a reviewed `models update` avoided browser UI friction. Live
-  readback confirmed the new prompt and retained avatar; human conversation
-  playtest is still pending. Basic Canary's prompt now lags Basic, so DESIGN.md
-  no longer claims an exact clone between evaluation cycles.
-- 2026-08-25: drafted from issue #65 + chat/AGENTS.md; reconciles the AGENTS.md
-  "don't edit in admin UI" rule (tools/functions) with the issue's "edit
-  directly on OWUI for quick iteration" (prompts).
-- 2026-09-03: the in-app browser timed out opening Workspace, so a narrow
-  three-model prompt edit used `owui-cli models update` from reviewed repo JSON.
-  Live readback matched, and a Basic identity probe exercised the new wording;
-  the human playtest gate remains distinct from this automated check.
-- 2026-09-16: a skill edit followed the repo-and-deploy loop used for tools.
-  `owui-cli skills deploy` updated content but deliberately preserved the live
-  description, so changed discovery metadata required a direct read-modify-write
-  to the skill update endpoint. Live `skills pull` verified both fields.
-- 2026-09-16: renamed and expanded this playbook to cover skills explicitly.
-  The Code Sandbox run's post-rollback repeat playtest was waived by Adam after
-  close review of the plain-language skill diff.
-- 2026-09-24: deployed mechanical quality fixes to 11 Chat tools/functions after
-  comparing every live source to repo HEAD; all 11 pulled back byte-identical.
-  Lathe was excluded: its 0.29.6 frontmatter identifies an upstream release,
-  so a local lint-only change would break the byte-identical upstream pin.
-  Manual conversation playtest is still pending.
-- 2026-09-24: while playtesting, Adam retired five legacy toolkits rather than
-  testing them. Snapshot each live tool's source and metadata first, check for
-  model bindings, then delete in OWUI and remove repo source and DESIGN entries.
-  Issue #76 tracks a future BayLeaf-scoped-key replacement for DeepInfra.
-- 2026-09-24: Adam's live Basic reply exercised the global rate-limit filter,
-  and his Campus Directory tool call succeeded. The changed API auth/key route
-  returned 200 with the expected budget fields. No Brace3 course model appeared
-  in the live model list, so its stealth Canvas toolkit could not be exercised
-  through a normal conversation in this run.
-- 2026-09-24: Brace3 toolkit/filter refactor: deployed repo source, copied the
-  existing Canvas token from the filter valve to the new toolkit valve without
-  exposing it, bound the toolkit on the newly provisioned course model, then
-  removed runtime injection. Pulled the new model to a sibling-image-backed
-  repo file. `tools deploy` / `functions deploy` preserved the old live
-  descriptions even though their manifests updated: synchronized descriptions
-  separately through the update endpoints without changing grants or valves.
-  An end-to-end non-admin Canvas tool playtest remains a human gate.
-- 2026-09-25: Renamed the Brace3 prompt filter by creating a new OWUI function
-  ID, copying the configured Canvas token in memory, rebinding the course model,
-  and retiring the old function only after confirming no models referenced it.
-  Renaming a live function is a migration, not merely an edit to its display name.
-  `functions deploy` cannot create this ID because the missing-function GET
-  returns HTTP 401; a direct create POST worked, then the valve was copied and
-  the new filter activated before binding the model.
-- 2026-09-25: Repaired Help's model-inspection tools after a real chat exposed
-  a missing OWUI model-table method, already absent in v0.11.3. Read access
-  checks still precede prompt disclosure: BayLeaf deliberately makes system
-  prompts visible to model readers. Local authorization tests, live source
-  readback, and an authenticated model-list call passed; Adam confirmed the
-  browser replay works correctly.
-- 2026-09-25: A student-shared Brace3 chat revealed that model-bound tools
-  without tool-level grants are silently skipped for non-admin users in OWUI
-  0.11.4. Course-scoped the Canvas tool (including pagination), deployed the
-  new source, synchronized its live description separately, and added a course
-  group tool grant without disturbing its valve. A non-admin chat playtest is
-  still needed; model binding alone is not proof of tool availability.

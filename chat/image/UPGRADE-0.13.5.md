@@ -15,8 +15,8 @@ proceed without the usual full-day soak.
   means restoring a database backup and losing later writes.
 - A `pg_dump` was taken immediately before deployment (296 chats, 54 tables) over
   a verified TLS connection. Laptop access to the database firewall was added for
-  the dump and removed afterward. The dump holds conversations, stays private, and
-  is to be deleted after acceptance. It was not test-restored.
+  the dump and removed afterward. It was not test-restored, and was
+  deleted with the operator's approval after acceptance.
 - The telemetry sources and six guarded runtime pins are unchanged. `env.py`,
   `requirements.txt` and `pyproject.toml` changed and were re-pinned, and browser
   asset guards were refreshed. The stock loader is still empty.

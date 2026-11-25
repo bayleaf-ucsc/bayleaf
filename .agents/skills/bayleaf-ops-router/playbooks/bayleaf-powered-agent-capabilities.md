@@ -20,9 +20,8 @@ offer it, and use the central API under the user's authority. Users should not
 need to remember endpoint names or ask their agent to read the API docs.
 Thoughtful differences between surfaces are welcome; silent omissions are not.
 
-This is an operator playbook, not a skill to install in end users' agents. It is
-a first draft motivated by [issue #97](https://github.com/bayleaf-ucsc/bayleaf/issues/97),
-not an exercised release procedure or authorization to implement Inboxes.
+This is an operator playbook, not a skill to install in end users' agents. It does
+not itself authorize implementing or releasing a capability.
 
 ## Separate three obligations
 
@@ -48,16 +47,15 @@ Reconfirm these source locations at each run. New clients join this inventory.
 
 | Surface | Source / delivery to inspect | What must be decided |
 |---|---|---|
-| Hosted OpenChamber / OpenCode | `api/sandbox-plugin/` tools and `skills/`; `api/src/routes/wellknown.ts`; installer in `api/scripts/browser-setup.py` | Tool/skill registration in the actual workspace, native permissions, published package pin and refresh path |
+| Hosted OpenChamber / OpenCode | `api/sandbox-plugin/` tools and `skills/`; `api/src/routes/wellknown.ts`; installer in `api/scripts/browser-setup.py`; shared CLI/MCP in `api/sandbox-cli/` | Tool/skill registration in the actual workspace, native permissions, published package pin and refresh path |
 | BayLeaf Chat | `chat/tools/`, `chat/skills/`, `chat/models/`; read `chat/AGENTS.md` and `chat/DESIGN.md` | Appropriate toolkit/model, grants versus default attachment, ordinary-user discoverability, mapping Chat identity to API authority |
-| Desktop OpenChamber / OpenCode | Standard and Sealed discovery/config in `api/src/routes/wellknown.ts`; setup guidance in `GETTING-STARTED.md` and `llms.ts`; any user-facing skill/plugin distribution identified there | What onboarding actually installs, useful advertised triggers, user consent, updates for existing installations, Standard/Sealed differences |
+| Desktop OpenChamber / OpenCode | Standard and Sealed discovery/config in `api/src/routes/wellknown.ts`; public skill catalog in `api/src/routes/docs.ts`; setup guidance in `GETTING-STARTED.md` and `llms.ts`; any user-facing skill/plugin distribution identified there | What onboarding actually installs, useful advertised triggers, user consent, updates for existing installations, Standard/Sealed differences |
 | Main agent reference and HTTP docs | `api/src/routes/llms.ts` (`https://api.bayleaf.dev/llms.txt`), code-owned OpenAPI routes/schemas and `apiReference.ts` | Workflow orientation and accurate availability; exact contracts remain generated, not duplicated |
 
 OpenChamber is the primary graphical agent surface on desktop. OpenCode Web
 is a second hosted surface on the same BayLeaf agent bootstrap;
 review transferability of workflows without assuming identical capabilities or
-credential boundaries. Nanobot was retired on 2026-11-04 and is excluded from
-current exposure decisions. Earlier refinement entries remain historical evidence.
+credential boundaries. Exclude retired surfaces (Nanobot) from exposure decisions.
 
 The desktop row is an obligation, not a claim that a complete capability package
 already ships. Trace actual distribution before naming a canonical owner. Do not
@@ -95,6 +93,12 @@ skills available to campus users. `/docs/SKILL.md` currently redirects to
    contracts from skills. Avoid putting credentials in model-visible arguments,
    examples, outputs or persistent instructions. Do not load all of `llms.txt`
    every turn as a substitute for a small discoverable capability surface.
+   - Reuse API Zod schemas for shared CLI/MCP tools, not a second field catalog.
+     Keep one registration per harness, and state any permission-prompt difference.
+   - Point agents at authenticated limits discovery, not hard-coded quotas. Do not
+     state exact numbers for limits that cannot be introspected.
+   - Put safety ceilings (P3 maximum, P4 exclusions, including Sealed) in both the
+     advertised description and the skill body.
 5. **Coordinate documentation and delivery.** Update `llms.txt` workflow guidance
    and generated contracts as appropriate, plus user-facing setup instructions
    if installation changes. Identify independently published adapter packages,
@@ -102,13 +106,16 @@ skills available to campus users. `/docs/SKILL.md` currently redirects to
    configuration refresh, and existing-session skill staleness. Record fresh,
    already-running and sleeping-client behavior separately. Source edits alone
    do not prove a capability reached users; don't restart users' work to test it.
+   Bump the desktop catalog version for every deployment variant whose text changes,
+   including flag-dependent text, not just for source edits.
 6. **Verify each exposed row below.** Keep adapter unit tests, runtime discovery,
    behavioral playtests and live rollout evidence distinct. Synthetic tests come
    first. Ordinary-user checks matter: admin discovery can mask missing grants.
+   Off-campus keyless denial does not establish positive Campus Pass behavior.
+   Passing contract tests does not replace a separate adversarial lifecycle review.
 7. **Record the outcome.** Show the exposure matrix, diff, test evidence, deployed
-   versions (if approved), and explicit gaps. Append deviations to the refinement
-   log. Suggest one coherent `docs:` or `update:` commit, but do not commit, push,
-   post to the issue, or close it without authorization. A capability can ship
+   versions (if approved), and explicit gaps. Suggest one coherent `docs:` or
+   `update:` commit, but do not commit, push, post to the issue, or close it without authorization. A capability can ship
    API-only by deliberate decision; do not call unverified adapter parity done.
 
 ## Verification: the capability is at hand
@@ -131,14 +138,15 @@ skills available to campus users. `/docs/SKILL.md` currently redirects to
   not just repo text. Exercise fresh setup and the documented update path for
   existing clients. Mark live checks pending when only local tests were run.
 - **Negative discovery:** omitted, disabled, removed or proposal-only capabilities
-  are not advertised as usable. Allowed references accurately explain status.
+  are not advertised as usable. HTTP schema support alone is not enablement.
+  Allowed references accurately explain status.
 
-## Motivating case: Inboxes (#97), proposal only
+## Reference case: Inboxes
 
-If approved and implemented, an ordinary task such as “I need an address where
-this service can send a report while my computer is off” should let an agent
-offer a BayLeaf inbox. “Help me find the report that arrived yesterday” should
-suggest authorized retrieval, not ask the user to explain the API.
+An ordinary task such as “I need an address where this service can send a report
+while my computer is off” should let an agent offer a BayLeaf inbox. “Help me find
+the report that arrived yesterday” should suggest authorized retrieval, not ask the
+user to explain the API.
 
 Decide creation, list/search/read, attachment download, archive, deletion and
 inbox destruction separately for every surface. Do not infer exposure decisions
@@ -146,7 +154,6 @@ from this example. Mail reception alone must never activate an agent, inference,
 reply, forwarding or tool execution. Incoming mail and attachments are untrusted
 data. Stored inbox content has a different retention/operator-access boundary
 from content-free inference, and copying it into Chat introduces stored history.
-Exact paths, credentials and deletion semantics await an implemented contract.
 
 ## Rollback and retirement
 
@@ -155,173 +162,3 @@ alongside tools, skills, configs and docs; stale skills already loaded in a
 conversation may persist. Keep server-side denial authoritative even when old
 clients retain descriptions. Do not broaden credentials or bypass the central
 API to keep a retired capability appearing functional.
-
-## Refinement log
-
-- 2026-11-11 (Rooms #159): Skills only, no MCP tools, by decision. A skill-only capability
-  must still be gated in the sandbox plugin (it loads every `skills/` folder); unlike
-  Inboxes it stays under shared MCP. Matrix in `rooms/QUALIFICATION.md`. Desktop discovery
-  verified live: the catalog skill surfaced in a harness immediately after the API deploy.
-
-- 2026-11-11 (multimodal decisions, deployed): OpenRouter's documented
-  media-in-state transport and live ZDR endpoint evidence clear the earlier
-  upstream blocker, not the rollout gate. Actual local Worker + capped live
-  upstream checks exposed still-image/video identity confusion, now explicitly
-  denied; HTTP/llms exposure remains API-first, with client adapters deferred.
-  Production ordinary-key and scoped-token checks passed after deployment;
-  off-campus keyless denial does not establish positive Campus Pass media.
-
-- 2026-11-04 (CollabMD retirement, local only): Removed managed-room discovery,
-  installer and owner password delivery. Generic public/private previews remain
-  available; all remaining managed apps are private. Registration crash recovery
-  is retained and tested against Jupyter rather than the retired room adapter.
-  Existing documents/sidecars remain untouched; deployment is separate.
-
-- 2026-11-04 (Nanobot retirement): Removed the retired hosted surface from the
-  active inventory and documentation exposure matrices. OpenChamber is the primary
-  graphical surface across desktop and sandbox, not a claim of capability parity.
-  Earlier Nanobot qualification and delivery entries remain historical; do not
-  treat their build or release instructions as current maintenance requirements.
-
-- 2026-11-01 (HF artifact gateway, #121): Exposure matrix recorded in
-  api/HF-GATEWAY.md: llms.txt and OpenAPI (Artifacts tag) expose; hosted
-  OpenChamber/Nanobot deferred until a restricted-egress sandbox profile exists;
-  Chat not applicable; desktop omitted (documentation suffices). No telemetry added.
-
-- 2026-10-30 (provider pinning, documentation only): Existing JSON passthrough was live-qualified with the operator's BayLeaf key: pinned text and vision returned DeepInfra, while a nonexistent provider failed with 404 instead of falling back. Expose guidance in llms.txt and generated Chat Completions docs; hosted OpenChamber/Nanobot, Chat and desktop adapters are not changed because no new capability, credential or default is introduced. Local docs tests cover both surfaces; publication remains pending approval.
-
-- 2026-10-24 (approved hosted shared-MCP delivery): Source, published plugin, actual
-  generated config, active MCP connection and installed Nanobot registry are
-  distinct evidence. Retained usage/shared limit reads pass, while inactive Desktop
-  correctly gates screenshots. Public orientation now distinguishes shipped hosted
-  setup from desktop/laptop inference onboarding and historical recipe skills.
-
-- 2026-10-24 (shared hosted MCP candidate): Discovery and invocation now move
-  together at deliberate setup, with duplicate native registrations/recipes
-  suppressed only for configured clients. Shared tools need explicit per-harness
-  prefixes, Nanobot private-only schema/dispatch, retained save/destruction tools
-  and an honest native-permission UX delta. Local candidate, not delivered parity.
-
-- 2026-10-24 (approved sandbox CLI trial): Installer deployment and owner-only
-  executable qualification need no adapter publication or UI migration. Existing
-  Terminal PATH, managed placeholder substitution, real stdio listing and one
-  already-active Desktop screenshot passed, not agent discovery/consent parity.
-  No OpenChamber/Nanobot process was available for direct PATH qualification.
-
-- 2026-10-24 (sandbox CLI/MCP, local): Reuse HTTP Zod validators for curated MCP
-  schemas and CLI validation rather than creating another field catalog. Native
-  images and SDK stdio tests qualify protocol behavior, not managed-agent delivery.
-  Exposure matrix and deferred duplicate-free migration/approval policy gates are
-  in `api/sandbox-cli/README.md`; no Chat, desktop or live adapter migration claimed.
-
-- 2026-10-24 (computer-use, API-only release): Exposure matrix and adapter owners
-  recorded in `api/COMPUTER-USE.md`, with native image delivery and consent gates
-  explicitly deferred. Read-only Toolbox status lacked generation identity, so
-  the approved fixed `/proc` probe replaces PID-only checks without waking compute.
-  Approved deployment does not establish functional live API qualification;
-  CLI/MCP and other adapter delivery remain deferred, as does floor control.
-
-- 2026-10-23 (native Windows qualification): HTTP fixtures missed curl 8.8.0's
-  HTTPS certificate-info/write-out failure. Explicit PowerShell discovery aliases
-  passed native generated-argv tests and the deployed desktop-to-campus-login
-  handoff. Ctrl+C did not terminate the service-owned helper; postapproval key/config
-  qualification remains separate. Never call URL display a completed login.
-
-- 2026-10-23 (OpenCode curl transport): Windows background-service launches need
-  process stderr, not `CON`. Test the advertised argv with stdout/stderr pipes;
-  retain legacy instruction routes while replacing discovery. Exposure is shared
-  Standard/Sealed/Sandbox onboarding only, with no adapter or authority change.
-
-- 2026-10-21 (desktop data boundary): Put the P3 ceiling and P4 exclusions
-  in both the platform shim's advertised description and body, not only the linked
-  reference. Qualify PII by UCSC classification; Sealed is not a P4 exception.
-  Bump all deployment variants and test disabled-feature prose without treating
-  a safety restriction as an availability advertisement. Docs tests passed; deployed
-  as `29a6fb1e-3ea8-46d6-bd9a-f3f2e623e249`, with live shim text and catalog
-  version `6-inboxes` verified. Existing-client refresh remains unverified.
-
-- 2026-10-21 (optional email domains): Initial-release enablement needs no client
-  compatibility layer. Keep omitted/null as the intentional open-email default;
-  distinguish verified domain authority from individual senders across discovery.
-  Local signed storage tests and live policy readback do not establish SMTP retries.
-
-- 2026-10-21 (community enablement): Explicitly empty pilot-owner source/default
-  config opens existing authenticated owner paths, including diagnostics and hosted
-  setup. Retain auth/isolation tests and accepted qualification limitations without
-  inventing another approval gate. Staging must not silently reinstate the pilot.
-
-- 2026-10-21 (managed-client isolation preflight): Temporary inference tokens
-  cannot authorize inbox reads; a synthetic owner also fails the production pilot
-  gate. Preserve the broad operator key locally and build an exact-inbox relay
-  before cloud qualification. Source allowlists do not prove gateway registration.
-
-- 2026-10-21 (quota discovery): Static defaults were insufficient for deployed
-  overrides. Add authenticated read-only discovery from the enforcement helper;
-  keep approximate, non-introspectable burst bindings out of exact numeric claims.
-  Receiver-first deployment supports coordinated API/adapter delivery.
-
-- 2026-10-21 (approved hosted release): TTL/finite events and discovery wording
-  published in both adapters, parent Nanobot allowlist deployed, exact production
-  pins/assets/settings read back. Script-only live SSE/export remain deliberate.
-  Production delivery does not establish existing-session or sleeping-client UX.
-
-- 2026-10-21 (candidate hosted completion): TTL inputs/readback and finite events
-  now have tested isolated adapter patches; live SSE is deliberately script/API,
-  not a long-running tool. Published live downloads and actual disposable Linux
-  stop/resume tests passed. Candidate live creation hit the ten-row owner quota;
-  Nanobot delivery additionally requires a parent enabledTools allowlist change.
-
-- 2026-10-21 (hosted inbox qualification): Published and current adapter executables
-  omit endpoint TTL inputs/readback and event tools. Export omission is deliberate.
-  A remote pin refresh cannot change an existing process's inbox feature-flag
-  environment; qualify that launch boundary separately from tool registration.
-
-- 2026-10-21 (integrated production rollout): Preserve live adapter pins in an
-  isolated staging copy and run authentic build hooks: main's generated assets may
-  be test fixtures. Fetched deployed modules and exact variable readback qualified
-  the artifact; HTTP export/SSE smoke and collector readback remain separate from
-  installed-client discovery, SMTP and production memory gates.
-
-- 2026-10-21 (DKIM main integration): Creation remains explicitly disabled in
-  owner workflow prose and deployment config. Cross-feature tests need the
-  verifier build/node compatibility and trigger-aware migration splitting even
-  when they exercise only SSE or export; HTTP schema support is not enablement.
-
-- 2026-10-21 (Inboxes discovery, local): Desktop now has a dedicated catalog skill
-  and all three non-Chat skills link to a focused workflow guide. Version catalog
-  entries for feature/pilot text changes too, not just source edits. Workerd checks
-  delivery and negative discovery; fresh-client behavioral prompts and rollout
-  gates are recorded in `inbox/TODO.md`, not claimed as passed.
-
-- 2026-10-21 (Inboxes DKIM, isolated local worktree): Exposure is creation/readback
-  through the owner HTTP API plus llms orientation, with adapter delivery deferred
-  in `inbox/OPERATIONS.md`. Clean-worktree API tests needed
-  explicit test-only fixtures for unrelated generated adapter assets; this does
-  not qualify real adapter installation or justify fixture-based deployment.
-
-- 2026-10-20 (Inboxes #97, local only): Approved HTTP/desktop/hosted exposure
-  matrix lives in `inbox/QUALIFICATION.md`; Chat and dashboard deferred. Add
-  negative-discovery checks to hosted installers as well as docs. Independent
-  contract tests passed while contract-level security flaws remained, so retain a
-  separate adversarial lifecycle/design review. Adapter source tests are not
-  installed-client or behavioral evidence; both submodule releases remain pending.
-
-- 2026-10-16 (desktop discovery, local): Standard and Sealed managed configs now
-  reference a public V2 HTTP catalog with a slim `bayleaf-platform` orientation
-  skill. No new tools, plugins, credentials or hosted behavior. Synthetic HTTP
-  tests cover both configs and public skill delivery; live client discovery,
-  behavioral offering and disconnect refresh remain unverified. HTTP catalogs
-  provide discovery without requiring an executable desktop plugin.
-
-- 2026-10-13 (decision inference rollout): Core HTTP, dashboard and visitor consent
-  qualified in production, including a shared text/decision token. Client adapters
-  remain deliberately deferred, and media transport qualification remains issue #98.
-
-- 2026-10-13 (decision inference, local): Adam approved API-first exposure, with
-  hosted/desktop adapters deferred in api/DECISIONS.md. Multimodal schema discovery
-  is not transport verification: media remains denied until an adapter is qualified.
-
-- 2026-10-13: Drafted from the #97 discussion and source inventory. Found that
-  `llms.txt` is onboarding-oriented and `/docs/SKILL.md` is a legacy redirect;
-  neither proves installed desktop capability discovery. No cross-surface
-  release or behavioral discovery test has exercised this playbook yet.

@@ -5,8 +5,7 @@ description: Launch, troubleshoot, and maintain BayLeaf's private localhost oper
 
 # BayLeaf operator dashboard
 
-Last reviewed: 2026-10-20. Extracted from the initial live implementation and
-browser-tested iteration; not independently agent-benchmarked.
+Last reviewed: 2026-10-20. Practiced; not independently agent-benchmarked.
 
 ## Orient
 
@@ -68,7 +67,8 @@ Read the current implementation before editing; these are the primary seams:
 
 HTML/JS/CSS edits send an SSE reload event to the browser; server edits restart
 through Node watch mode. Reloading performs another live read. Avoid gratuitous
-edits/reloads on dense windows. Start with one hour and refresh manually.
+edits/reloads on dense windows. Start with one hour and refresh manually. The
+page opens at 24 hours, the longest window raw sampling reads completely.
 
 Keep the existing simple ES-module/Web-API design. If adding a new asset/module,
 update the server's explicit static-file allowlist and UI watcher as needed.
@@ -86,6 +86,8 @@ Use the project's palette rather than the agent harness's theme.
   network location, not affiliation. Unknown must remain visible.
 - Arrival timeline tooltips show a service × network heatmap with both green
   intensity and small counts. Keep a consistent shade scale across time buckets.
+  When an arrival source is enabled, add it to `SERVICES` in `app.js`: the bars are
+  dynamic, but that fixed tooltip list silently omits unlisted sources.
 - User gauges are global snapshots, never sums across times or worker instances.
   Conflicting same-time values are not arbitrarily resolved. Missing data is not
   zero. Native active means activity within three minutes; active-today starts
@@ -101,8 +103,10 @@ Use the project's palette rather than the agent harness's theme.
 - Missing deletion reports do not establish zero deletions. Do not execute a
   cleanup job or generate inference just to make a panel interesting.
 - Source status means latest accepted observation, not proof of live health.
-- Reads are capped at 500 rows/request. The local server recursively splits time
-  windows with a query budget and deadline. Preserve explicit partial-coverage
+- Reads are capped at 500 rows/request, oldest first. The local server reads an
+  overflowing window's newest tail in full, then density-sized strata, within a
+  query budget and deadline. Never spend the budget oldest-first (headlines go
+  stale), and size strata from the denser end. Preserve explicit partial-coverage
   warnings, including dense same-millisecond gaps. Inspect current constants
   before changing them; do not silently turn this into an exhaustive exporter.
 - No persisted snapshots, exports or automatic polling. Clear views at the
@@ -134,33 +138,5 @@ credentials, read bounds or retention behavior changes. Report what changed,
 the local URL, checks actually run and important limitations. Do not commit,
 push, deploy or publish without explicit approval.
 
-## Refinement log
-
-- 2026-10-26 (later): Rebuilt panels around operator questions (up, Chat use,
-  arrivals, retention, sandboxes, inboxes) instead of storage classes; wired in the
-  previously unread `lifecycle` class, Daytona and Inboxes series. `app.js` now uses
-  an escaping `html` tagged template and one shared `timeChart` frame. Collector
-  `/v1/read/metric-buckets` exists in source (needs operator-approved deploy plus a
-  `metric_points(name, observed_at)` index); the dashboard falls back on 404. The
-  default window is 24 hours, the longest that raw sampling reads completely.
-- 2026-10-26 (windows): Added 30-day, 90-day and 1-year views. Raw reads chunk at
-  the collector's seven-day limit; nothing beyond the 90-day retention maximum is
-  read (hatched), and the last ten minutes of retention are skipped so earliest-
-  expiry clearing doesn't wipe long views instantly. The undeployed bucket route
-  gained a 6-hour size and a 90-day aggregate window.
-
-- 2026-10-26: Multi-day Chat gauges looked "truncated": collection was live, but
-  oldest-first bisection spent its 48-query budget on the window's first hours
-  (rows are `ORDER BY observed_at ASC`), leaving stale headlines. Replaced with a
-  complete newest tail plus density-sized strata and explicit covered spans. Size
-  strata from the denser end: sources join over time, so the oldest rows mislead.
-  Also: a watch-mode server restart mints a new session cookie; the page now
-  reloads on SSE reconnect instead of failing reads with 403.
-
-- 2026-10-20 (#113): Include `proxies` and `inboxes` in the arrival heatmap's
-  explicit service list when enabling those sources. Aggregate bars were already
-  dynamic; a fixed tooltip list otherwise silently omits part of the timeline.
-
-- 2026-10-20: Initial workflow extracted from a running live-data prototype.
-  UI hot reload and arrival heatmap were browser-checked; native gauge charts
-  added without expanding collection. Preserve this lightweight iteration loop.
+Run history lives in `evidence/operator-dashboard.md`: read it only for diagnosis,
+append dated run notes there, and fix this file when a step is wrong.

@@ -1,7 +1,7 @@
 ---
 source-skill: bayleaf-ops-router
 description: Diagnose monitoring failures, renew browser-probe credentials, or extend the unified BayLeaf monitoring Worker.
-status: First production run completed; monitor sampling and alert verification remain human gates
+status: practiced; monitor sampling and alert verification remain human gates
 last-reviewed: 2026-10-09
 ---
 
@@ -18,7 +18,7 @@ not the route-extension/deployment checklist. A model-only update also invokes
 
 ## Browser Monitor Diagnosis and Credential Renewal
 
-Validated on 2026-10-09. Current credential expiry and deployment evidence belong
+Current credential expiry and deployment evidence belong
 in `chat/probe/AGENTS.md` and `README.md` (Credentials), not a second expiry ledger
 here. Automatic renewal is not installed.
 
@@ -29,6 +29,10 @@ here. Automatic renewal is not installed.
    200 / `ok` is a credential/identity lead, not a browser-rendering failure.
    Check documented expiry; do not assume every identity failure is expiry or
    claim a campus login outage. This browser route never exercises CILogon.
+   For a failure after browser launch, reproduce the full probe through the same
+   Puppeteer SDK over authenticated Cloudflare CDP and isolate the failing
+   operation before assuming renamed selectors: simplified scripts can miss races.
+   `getPlatformProxy` remote setup can stall; do not rely on it here.
 2. **[HUMAN GATE]** Obtain approval to mint and install a replacement, including
    its lifetime. A 365-day JWT was explicitly approved for the dedicated non-admin
    probe user; it is not a general session policy. Its longer validity extends
@@ -137,7 +141,9 @@ a general API outage.
    admission, GET/HEAD completed-work parity, content-free errors, shared stream
    timing, and model drift against canonical checked-in configuration.
 3. Extend `qualify.mjs` and `qualify-prod.mjs`; qualification output remains an
-   allowlist of status and timing metadata, never content or raw errors.
+   allowlist of status and timing metadata, never content or raw errors. Give each
+   route a focused `--<route>-only` mode so an unrelated browser or sign-in failure
+   cannot couple to its evidence.
 4. Update `chat/probe/AGENTS.md`, `README.md`, `chat/DESIGN.md`, and root
    `AGENTS.md`. Distinguish source, deployed, qualified, monitored, and
    alert-verified states explicitly.
@@ -148,8 +154,11 @@ a general API outage.
 7. Deploy with the new route disabled or unconfigured until its scoped secret is
    installed. Qualify unauthenticated GET/HEAD denial and authenticated GET/HEAD
    completion after Cloudflare propagation. Record Worker version and concrete
-   observations without presenting them as a latency distribution.
-8. **[HUMAN GATE, ADAM]** Add the UptimeRobot ordinary HTTP monitor manually.
+   observations without presenting them as a latency distribution. Record failures
+   and deadline stalls alongside passes; a later pass does not establish alert
+   reliability or justify relaxing a deadline.
+8. **[HUMAN GATE, ADAM]** Add the UptimeRobot ordinary HTTP monitor manually, after
+   step 7 passes so setup failures stay out of its history.
    The playbook does not automate UptimeRobot: new probes are rare, so API
    automation would add more credential and maintenance surface than it removes.
    Record URL, name, Basic username `probe`, interval, timeout, and alert contact.
@@ -161,7 +170,8 @@ a general API outage.
    interval/timeout and public status auto-add separately; never assume cloning
    preserves a historical documented cadence. Alert verification remains Adam's.
 9. Adam verifies initial samples, optional public status-page inclusion, and one
-   controlled failure/recovery alert. A direct 200 does not pass this gate.
+   controlled failure/recovery alert. A direct 200 does not pass this gate, nor
+   does a first timing sample or an Operational label while the card says Preparing.
 
 For `/api/recommended`, the manual monitor fields are:
 
@@ -194,72 +204,3 @@ Commit the route, tests, qualification harnesses, synchronized docs, and this
 playbook as one coherent `add:` or `update:` commit after production behavior is
 accepted. Never commit secret, roster, SQL, `.dev.vars`, or `*.secrets.json`
 files. Do not commit or push without explicit approval.
-
-## Refinement Log
-
-- 2026-11-04: OWUI v0.13.0 browser failure at `typed` was a composer replacement
-  race between visibility and focus, not selector renaming. Full-probe reproduction
-  with a wrapped Puppeteer page isolated the failing operation; simplified paste
-  tests passed and missed it. Wrangler `getPlatformProxy` remote setup stalled;
-  authenticated Cloudflare CDP with the same SDK reproduced and qualified the source
-  fix without changing secrets. Approved deployment then passed actual endpoint
-  GET/HEAD with confirmed cleanup; scheduled monitor recovery remains unverified.
-
-- 2026-10-27: Deployed passive `/api/sandbox` and exact probe-owner reaper exemption;
-  fresh GET/HEAD passed and independent `lastActivityAt` remained unchanged.
-  Adam requested status integration and supplied an authenticated dashboard:
-  UI cloning retained email, but not working auth, and inherited a one-hour interval,
-  not the historical 15 minutes. Status auto-add included monitor `804453127`.
-  No new telemetry vocabulary. Initial timing (576 ms) and public Operational
-  status were misleading while the detail card said Preparing: the later check
-  failed 401 and saved Auth type was None. Adam pasted/saved the existing password;
-  reopened settings confirmed Basic. Check actual recovery in about an hour before
-  the authorized monitor-only setup-stat reset. Failure email is recorded sent
-  by UptimeRobot; actual inbox delivery and recovery alert remain unverified.
-
-- 2026-10-09: Expired browser JWT caused 503 / `browser_identity` before launch
-  while Chat HTTP passed. CLI console via a private PTY enabled container-side
-  one-year signing without exporting the signing key or changing global expiry.
-  Single-secret upload and focused browser GET/HEAD passed (34.595/21.478s), with
-  independently empty account history. Added diagnosis/renewal routing and the
-  default-duration, two-secret installer gotcha; monitor recovery remains separate.
-
-- 2026-10-08: redeploy/review passed 46 tests and live mutation checks. The first
-  Sealed GET hit the unchanged 25-second first-byte deadline; the next GET/HEAD
-  passed. Record failures alongside passes, and separate the expired browser JWT
-  and existing local-toolchain audit findings from Sealed qualification.
-
-- 2026-10-07: Sealed backend route is deployed and qualified, monitoring pending. Use the
-  pinned verifier and EHBP primitives rather than high-level SDK retries/cache
-  persistence; reuse the SSE validator after decryption. Real attestation and five
-  mutation checks passed; dedicated-key workerd GET/HEAD passed after approved
-  first-use provisioning. Local secret backup lacked the probe BayLeaf key, so
-  read only the existing active probe row from D1 into subprocess memory.
-  A default-only `worker.mjs` entry fixes local workerd rejection of string
-  constants exported for tests. Independent `--sealed-only` qualification avoids
-  unrelated Chat sign-in/cleanup; document each state's separate approval gate.
-  GPT-6 Astra review found that SDK gzip expansion bypassed the wire-size limit;
-  preflight streaming expansion is now capped at 64 KiB without changing signed
-  material. Clarified certificate SAN/domain/key consistency (not TLS peer or
-  certificate-signature authentication) and preserved HTTP failed-phase diagnostics.
-  Astra re-review cleared the fixes (46 tests). Approved deployment version
-  2e27f1f2-aeb7-4c19-b127-d4bbc5304f5e passed anonymous denial and authenticated
-  GET/HEAD (22.184/2.066s Worker totals), after an initial 25s first-byte stall.
-  Do not infer alert reliability from a later pass; manual monitor setup remains
-  a human gate. Existing plaintext probe also stalled once then passed (2.451s).
-  Adam subsequently confirmed monitor setup; public status inclusion/history was
-  observed (Sealed 96.542%, page currently operational). Failure attribution and
-  controlled alert delivery remain unverified.
-
-- 2026-09-09: First run used `probe@bayleaf.dev` across services with distinct
-  credentials and a `$1/day` API cap. Adam created the 15-minute UptimeRobot
-  monitor before deployment, so setup failures can appear in its initial history.
-  The full qualification run passed API GET/HEAD but failed on an unrelated
-  remote-browser HEAD; adding `--api-only` made layer evidence independent.
-  Endpoint qualification passed; initial monitor sampling and controlled
-  failure/recovery alert verification remain Adam gates.
-- 2026-09-15: Issue #68's recorded VPAT sessions reused the probe identity and
-  cleanup discipline but were correctly implemented as an operator-run harness,
-  not a monitor route. Cloudflare session recordings are rrweb event archives,
-  not videos; producing reference MP4s requires a separately verified replay and
-  encoding step.

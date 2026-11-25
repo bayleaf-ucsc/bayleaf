@@ -1,6 +1,7 @@
 ---
 source-skill: bayleaf-ops-router
 description: Qualify the preview gateway (bayleaf-proxies.dev) against the Lathe preview-wrapper contract, synthetically and live, after forwarding/response changes or app compatibility reports.
+status: rough; not independently replayed
 last-reviewed: 2026-10-27
 ---
 
@@ -35,7 +36,7 @@ the workflow. Contract changes go to the Lathe repo first (its §0).
 
 ## Steps
 
-1. **Synthetic first.** `cd api && npm run test:previews` (39 checks) and
+1. **Synthetic first.** `cd api && npm run test:previews` and
    `npm run test:sandbox-browser` (managed slots share the builder). Add cases
    for any new rule in `scripts/harness-previews.mjs`, reusing the `/status`,
    `/app-error`, `/large-error` fixtures.
@@ -64,7 +65,7 @@ the workflow. Contract changes go to the Lathe repo first (its §0).
    retry the app with no `upstream_headers`, then a deliberately failing request
    to confirm the app's own error body arrives.
 7. **Record.** Evidence and version ID in `api/PREVIEWS.md`; conformance
-   changes in the Lathe contract §12; a line in the log below.
+   changes in the Lathe contract §12.
 
 ## Daytona references
 
@@ -124,17 +125,3 @@ Behaviours observed live on signed URLs (2026-10-27):
 - `api/scripts/test-preview-compatibility.mjs` does not bundle (missing
   `.py` loader and `cloudflare:workers` external); it is not in `package.json`.
   Not a regression signal.
-
-## Evidence and refinement log
-
-- 2026-10-27 (bayleaf#118, Lathe #111/#112): header passthrough and app error
-  bodies. Harness 39/39 and sandbox-browser 33/33; deployed
-  `30d5e815-9621-48ad-906b-a5d9e73fede7`; live script 25/25. Found Daytona's
-  appended `X-Forwarded-Host` and the trust header's inertness on signed URLs.
-  First run of this playbook (written from that session); expect deviations.
-- 2026-10-27 (open-question pass): Go 1.25+ `http.CrossOriginProtection`
-  rejected same-origin POSTs behind BayLeaf (no `Sec-Fetch-Site`, `Host` is
-  localhost). Forwarded `Sec-Fetch-*` as browser basics and added
-  `X-Daytona-Disable-CORS`; deployed `066869e8-0779-4673-9b25-55bd2c4fff02`;
-  Go check 200 and contract script 25/25. Daytona source audit used the
-  archived repo; see Daytona references.

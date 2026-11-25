@@ -1,7 +1,7 @@
 ---
 source-skill: bayleaf-ops-router
 description: Reproduce reported OpenChamber desktop onboarding failures in disposable platform environments.
-status: exercised-components
+status: partly tested; assembled playbook has no independent clean-room replay
 last-reviewed: 2026-11-17
 ---
 
@@ -14,8 +14,7 @@ production workflow, or a promise of upstream stability. Related work: [#69](htt
 Read `api/AGENTS.md` and `GETTING-STARTED.md`. Load `daytona-api` for hosted
 guests or `cua-router` for local macOS if available. The repo-relative platform
 records below stand on their own; Darknut's global skills are not required.
-The platform instructions were derived from successful runs; this assembled
-playbook has not yet had an independent clean-room replay.
+This assembled playbook has not yet had an independent clean-room replay.
 
 ## Pick the coverage before provisioning
 
@@ -67,26 +66,26 @@ record, with the other records available on demand.
 Read only the selected detailed record, including its limitations:
 
 - **Windows:** `api/qualification/desktop-onboarding/windows.md`. Daytona
-  `windows-medium` tested Windows Server 2025 x64, not Windows 11. Download and
+  `windows-medium` is Windows Server 2025 x64, not Windows 11. Download and
   hash-check the official installer; inspect Authenticode separately. Launch
   through the interactive desktop, not Toolbox's SYSTEM/session-0 shell. Wait
-  for Run-dialog focus before typing. A transient request to install OpenCode
-  resolved to the bundled binary without intervention in the observed release.
+  for Run-dialog focus before typing. Let a transient
+  install-OpenCode screen resolve to the bundled binary before intervening.
 - **Linux:** `api/qualification/desktop-onboarding/linux.md`. Daytona
   `daytona-large` is a Debian container desktop sharing a host kernel, not a VM
-  or clean ordinary workstation. Verify/install the official amd64 DEB. The
-  observed Electron sandbox-helper permission failure was repaired with the
-  package's root-owned helper at mode 4755, **not** `--no-sandbox`. First record
+  or clean ordinary workstation. Verify/install the official amd64 DEB. If
+  the Electron sandbox helper fails on permissions, set the
+  package's root-owned helper to mode 4755, **not** `--no-sandbox`. First record
   the failure; apply this repair only for the same verified package/condition.
-  An old PATH OpenCode required using the explicit bundled CLI instead.
+  If PATH resolves an older OpenCode, use the explicit bundled CLI instead.
 - **macOS, local:** `api/qualification/desktop-onboarding/macos.md`. Prefer for
   routine runs on a capable Apple silicon Mac. Create an owned
   Cua/Lume task VM from a retained base; never boot/install into the base itself.
-  Check cache dry-run and disk headroom before create. The successful guest was
-  macOS 26.5.2 arm64. Use the official ZIP, checksum, Apple signature and Gatekeeper
-  checks inside the guest. This does not qualify a novice DMG workflow. Direct
-  authenticated guest CLI control worked while daemon-backed control did not;
-  follow that record rather than installing a host driver or disabling a VPN.
+  Check cache dry-run and disk headroom before create. Use the official
+  ZIP, checksum, Apple signature and Gatekeeper
+  checks inside the guest. This does not qualify a novice DMG workflow. If
+  daemon-backed control fails, use the record's direct authenticated guest CLI
+  control rather than installing a host driver or disabling a VPN.
 - **macOS, hosted:** `api/qualification/desktop-onboarding/macos-daytona.md`.
   Use Daytona v2 for a non-Mac operator, a release batch, or a hosted
   reproduction. Check live price and stock; stage the cases and approval
@@ -96,10 +95,10 @@ Read only the selected detailed record, including its limitations:
   neither Mac route is available, report macOS as **blocked**, not passed.
 
 For legacy Daytona Windows/Linux, verify returned lifecycle settings: `autoDeleteInterval: 0` means
-delete on stop, whereas `-1` disabled it in the exercised API. Preserve disk
+delete on stop, whereas `-1` disables it. Preserve disk
 across idle stop and verify a separate maximum-lifetime backstop. For local Cua,
-the requested TTL was not reflected in `expires_at`; an exact-owned-guest watchdog
-provided the backstop. A requested timeout is not evidence of enforcement.
+`expires_at` may not reflect the requested TTL: run an exact-owned-guest watchdog
+as the backstop. A requested timeout is not evidence of enforcement.
 
 ## 3. Observe, connect, and approve
 
@@ -121,7 +120,8 @@ provided the backstop. A requested timeout is not evidence of enforcement.
    page. The requesting guest retains its device secret; the browser uses its
    genuine session and CSRF form. No CF secrets, forged sessions, DB edits,
    owner-key injection, or institutional password entry in the guest are needed.
-5. Confirm the guest CLI reaches Connected/Done without displaying a key. If a
+5. Confirm the guest CLI reaches Connected/Done without displaying a key. Browser
+   approval alone does not prove an interrupted guest client saved the login. If a
    claim expires, cancel only its login process, start a fresh claim and reverify
    the code. Generic expired errors can also mean a mistyped or already-used code:
    crop/inspect small terminal text rather than guessing it.
@@ -135,8 +135,8 @@ provided the backstop. A requested timeout is not evidence of enforcement.
 - Establish an absent output file in a neutral task folder. Submit one synthetic
   GUI task asking the model to use at most three tool calls to write and read a
   short sentinel there, then stop. No web access, subagents, personal files or
-  extended agent loop. Windows' exercised alternative read `2,3,5` from an input
-  file and wrote exactly `10` to a separate output file.
+  extended agent loop. Alternative: read `2,3,5` from an input
+  file and write exactly `10` to a separate output file.
 - Independently read/export the output through guest execution/file tools and
   compare exact bytes/hash. A model saying “done” is not proof. Capture the GUI
   tool result and provider/model. Report application cost as client-reported,
@@ -169,17 +169,16 @@ For each platform report:
 - Affected/unaffected combinations and untested impact, evidence path, cost basis,
   cleanup proof, and an explicit artifact retention/delete decision from the owner.
 
-The initial runs found canonical onboarding working on all three environments.
-Historical Windows discovery aliases returned 404: keep that separate from a
+Keep a 404 from historical Windows discovery aliases separate from a
 canonical-login failure. Sealed, Windows 11, broad accessibility, project permission
-boundaries and reboot behavior were not qualified. This procedure does not prove
+boundaries and reboot behavior remain unqualified. This procedure does not prove
 all BayLeaf capabilities are exposed by a desktop provider connection.
 
 ## 6. Cleanup and recording
 
 Export and verify needed artifacts first. Use local OpenCode logout, not BayLeaf
 account-key revocation: the ordinary key may be shared by the operator's other
-clients. OpenCode 2.2.6 noninteractive logout required both integration target
+clients. Noninteractive logout may require both integration target
 and credential label; inspect `auth logout --help` and metadata-only `auth list`.
 Then explicitly delete only owned guests and verify both exact-ID absence and
 complete inventory convergence. Cancel owned watchdogs only after verification.
@@ -187,18 +186,6 @@ Leave base images, host apps, shared daemons and unrelated resources untouched.
 
 There is no service rollback: this workflow changes no production code or policy.
 Stop the guest attempt and preserve diagnostics when a repair would exceed scope.
-Update the selected platform record and this refinement log after a run. Propose
+Update the selected platform record after a run. Propose
 one coherent `docs:` commit; never commit, push, edit issues or publish evidence
 without approval. Sanitized markdown may be proposed for git; raw artifacts may not.
-
-## Refinement log
-
-- 2026-11-11: Derived from three successful platform runs with OpenChamber 2.7.0
-  and OpenCode 2.2.6, not an independent replay of this assembled document. Fixed
-  delete-on-idle-stop handoff loss; recorded Linux sandbox/PATH repairs and an
-  accidental default-provider request. macOS used guest-only direct control with
-  VPN unchanged. Trusted-browser agent approval succeeded without privileged bypass.
-- 2026-11-17: Added the hosted Mac route after a desktop smoke and a separate
-  guest click probe. The checkout's five-minute wall-clock default deleted
-  the first guest; a persistent replacement preserved disk. Browser approval
-  alone did not prove that an interrupted guest client saved the login.

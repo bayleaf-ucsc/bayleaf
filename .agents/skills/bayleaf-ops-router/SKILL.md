@@ -7,7 +7,8 @@ description: Operations playbooks for BayLeaf Chat, API, and Sandbox. Use for de
 
 Dispatches to one playbook per recurring operational workflow. Playbooks live
 in `playbooks/` as ordinary markdown; read only the one that matches, not the
-whole clump.
+whole clump. `evidence/` holds the record of past runs, one file per playbook:
+skip it during normal work.
 
 ## Trigger table
 
@@ -57,13 +58,18 @@ Playbooks are living artifacts; rough drafts are expected (issue #65). Rules:
 
 1. On loading a playbook, check its `last-reviewed` date. If older than six
    months, tell the user and offer to refresh it before relying on it.
-2. After completing a run, append a dated entry to the playbook's
-   **Refinement log**: what differed from the written steps, what surprised
-   you, what to fix. One or two lines is enough.
-3. If reality contradicted a step, fix the step now, not later. A wrong
-   playbook is worse than none.
-4. A playbook that has never been run is a guess. Say so when loading one
-   with an empty refinement log.
+2. If reality contradicted a step, or a run taught something the next run
+   needs, change the playbook step now, not later. A wrong playbook is worse
+   than none. Write it as a present-tense instruction, without dates,
+   deployment or commit ids, or the story of how it was learned.
+3. After completing a run, add a dated entry at the top of
+   `evidence/<playbook>.md` (create the file on the first run): what differed,
+   what surprised you, ids, results and what went untested. One or two lines is
+   enough. A lesson recorded only there is lost: apply rule 2 first.
+4. Read evidence only to diagnose a failure, check whether a step was ever
+   exercised, or find the reason behind a rule.
+5. A playbook with no evidence file, or one without a real run, is a guess. Say
+   so when loading it.
 
 ## Private snapshots
 
