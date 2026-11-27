@@ -180,6 +180,12 @@ in `sendWithHeal` minted a fresh key with a fresh $5/day cap. An exhausted key
 is still valid; only OpenRouter 401 is a healing signal. This is different from
 Tinfoil, where 403 remains a possible credential rejection.
 
+A second variant (reported 2026-11-25): the `/v1/*` POST catch-all healed on
+401, and a caller-chosen management path such as `/v1/keys` returns 401 to a
+valid inference key, so any caller could mint fresh budget on demand. The
+catch-all no longer heals, and OpenRouter heals now require the management API
+to report the stored key absent (404). `npm run test:grants` covers both.
+
 `scripts/harness-provision.mjs` is the one part of this file that runs itself.
 It exercises every path through `src/provision.ts` (fresh token provision, lazy
 backend minting, 409 on double-provision, self-heal after upstream key loss,

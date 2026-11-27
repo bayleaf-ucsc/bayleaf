@@ -83,6 +83,8 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{name:'credentials'
       if(u.pathname.endsWith('/models'))return Response.json({data:[{id:'test/open',name:'Synthetic',hugging_face_id:'test/open',architecture:{output_modalities:['text']},pricing:{prompt:'0',completion:'0'}}]});
       if(u.pathname.endsWith('/keys') && req.method==='POST'){minted++;return Response.json({key:'provider-'+minted,data:{hash:'hash-'+minted}});}
       if(u.pathname.includes('/keys/') && req.method==='DELETE'){discarded++;return new Response(null,{status:204});}
+      // Heal confirmation: rejected keys in this harness are gone upstream.
+      if(u.pathname.includes('/keys/') && req.method==='GET')return Response.json({error:{code:404}},{status:404});
       if(u.pathname.endsWith('/auth/key'))return Response.json({data:{limit:5,limit_remaining:3,limit_reset:'daily',usage_daily:2}});
       assert.match(req.headers.get('Authorization'),/^Bearer provider-/);
       if(rejectInference){rejectInference=false;return new Response('',{status:401});}

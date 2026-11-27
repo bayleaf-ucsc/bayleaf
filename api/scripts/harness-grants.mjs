@@ -83,7 +83,8 @@ const mf = new Miniflare(convertV4MiniflareOptions({ port: process.argv.includes
       : { results: [{ url: 'https://example.test/', raw_content: 'Synthetic page.' }], failed_results: [] });
     if (url.hostname === 'openrouter.ai' && url.pathname.endsWith('/auth/key'))
       return Response.json({ data: { limit: 1, limit_remaining: 1, usage: 0, usage_daily: 0, limit_reset: 'daily' } });
-    if (url.hostname === 'openrouter.ai' && url.pathname.endsWith('/keys/synthetic-key-hash')) return Response.json({ data: {
+    if (url.hostname === 'openrouter.ai' && url.pathname.endsWith('/keys/synthetic-key-hash')) return decisionAuthMode === 'heal'
+      ? Response.json({ error: { code: 404, message: 'API key not found' } }, { status: 404 }) : Response.json({ data: {
       hash: 'synthetic-key-hash', disabled: false, limit: 5, limit_remaining: 5, usage: 0,
       usage_daily: 0, usage_weekly: 0, usage_monthly: 0, limit_reset: 'daily', created_at: new Date().toISOString(),
     } });
@@ -103,7 +104,10 @@ const mf = new Miniflare(convertV4MiniflareOptions({ port: process.argv.includes
       return Response.json({ choices: [{ message: { content: 'Synthetic Vertex inference.' } }] });
     }
     assert.equal(url.hostname, 'openrouter.ai');
-    if (url.pathname === '/api/v1/keys' && req.method === 'POST' && decisionAuthMode === 'heal') {
+    if (url.pathname === '/api/v1/keys' && req.method === 'POST' && ['heal', 'catchall'].includes(decisionAuthMode)) {
+      // Like OpenRouter, reject a valid inference key on a management-only path.
+      if (req.headers.get('Authorization') !== 'Bearer synthetic-management-key')
+        return Response.json({ error: { code: 401, message: 'Invalid API key' } }, { status: 401 });
       keyProvisionCalls++;
       assert.equal(req.headers.get('Authorization'), 'Bearer synthetic-management-key');
       const body = await req.json(); assert.equal(body.limit, 1); assert.equal(body.limit_reset, 'daily');
@@ -111,7 +115,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ port: process.argv.includes
     }
     if (url.pathname === '/api/alpha/decisions') {
       const authorization = req.headers.get('Authorization');
-      if (decisionAuthMode === 'heal' && authorization === 'Bearer synthetic-existing-provider-key')
+      if (['heal', 'live401'].includes(decisionAuthMode) && authorization === 'Bearer synthetic-existing-provider-key')
         return Response.json({ error: { code: 401, message: 'Invalid synthetic provider key' } }, { status: 401 });
       assert.equal(authorization, decisionAuthMode === 'heal' ? 'Bearer synthetic-healed-provider-key' : 'Bearer synthetic-existing-provider-key');
       if (decisionAuthMode === 'budget') return Response.json({ error: { code: 403, message: 'Budget exhausted' } }, { status: 403 });
@@ -419,12 +423,16 @@ try {
     assert.deepEqual(usageToken.scopes, ['usage.read']); assert.deepEqual(usageToken.models, []);
     await expect(await request('/usage', { key: usageToken.key }), 200);
   });
-  await check('keyed decision 401 heals once while budget 403 cannot mint more credit', async () => {
+  await check('keyed decision 401 heals once only for a confirmed-deleted key; 403 and live-key 401 cannot mint credit', async () => {
     const original = await db.prepare('SELECT or_key_secret,or_key_hash FROM user_keys WHERE email=?').bind('owner@example.test').first();
     const input = { model: 'openrouter:test/decision', state: 'Synthetic', questions: { yes: { type: 'noul', instructions: 'Yes?' } } };
     const before = keyProvisionCalls;
     decisionAuthMode = 'budget';
     await expect(await request('/v1/decisions', { key: 'sk-bayleaf-owner', json: input }), 403);
+    assert.equal(keyProvisionCalls, before);
+    // A 401 is only a hint: the management API still reports the key, so no mint.
+    decisionAuthMode = 'live401';
+    await expect(await request('/v1/decisions', { key: 'sk-bayleaf-owner', json: input }), 401);
     assert.equal(keyProvisionCalls, before);
     decisionAuthMode = 'heal';
     await expect(await request('/v1/decisions', { key: 'sk-bayleaf-owner', json: input }), 200);
@@ -434,6 +442,20 @@ try {
     decisionAuthMode = '';
     await db.prepare('UPDATE user_keys SET or_key_secret=?,or_key_hash=? WHERE email=?')
       .bind(original.or_key_secret, original.or_key_hash, 'owner@example.test').run();
+  });
+  await check('catch-all POST to a caller-chosen path cannot turn a valid-key 401 into a fresh key', async () => {
+    const original = await db.prepare('SELECT or_key_secret,or_key_hash FROM user_keys WHERE email=?').bind('owner@example.test').first();
+    const before = keyProvisionCalls;
+    decisionAuthMode = 'catchall';
+    try {
+      await expect(await request('/v1/keys', { key: 'sk-bayleaf-owner', json: { model, name: 'x' } }), 401);
+      assert.equal(keyProvisionCalls, before);
+      assert.deepEqual(await db.prepare('SELECT or_key_secret,or_key_hash FROM user_keys WHERE email=?').bind('owner@example.test').first(), original);
+    } finally {
+      decisionAuthMode = '';
+      await db.prepare('UPDATE user_keys SET or_key_secret=?,or_key_hash=? WHERE email=?')
+        .bind(original.or_key_secret, original.or_key_hash, 'owner@example.test').run();
+    }
   });
   await check('browser multi-model consent and exchange preserve every model and recheck all backend gates', async () => {
     const headers = { 'X-Harness-Backends': 'true' };

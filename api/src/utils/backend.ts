@@ -79,6 +79,14 @@ export async function resolveBackendCredential(
  * caller that has already consumed the client's request body cannot re-send it,
  * which is why the `/v1/*` streaming passthrough does not use this helper.
  *
+ * `send` must also target an upstream path BayLeaf chose, never one the caller
+ * chose. A 401 only means "dead credential" for a request the credential is
+ * entitled to make. On a caller-chosen path (OpenRouter's management-only
+ * `/keys`, for example) a perfectly valid key gets 401, and every heal mints a
+ * fresh daily budget while the old key keeps its spend. That is why the
+ * `/v1/*` POST catch-all forwards without healing despite having a replayable
+ * body (regressed once, in 277ed95; `npm run test:grants` now guards it).
+ *
  * OpenRouter returns 403 for an exhausted per-key daily spend cap, as well as
  * other valid-key denials. Never heal an OpenRouter 403: doing so creates a new
  * $5/day key and lets the caller spend again. Its invalid/revoked-key response

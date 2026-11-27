@@ -51,7 +51,7 @@
  */
 
 import type { Bindings, OpenRouterKey, UserKeyRow } from './types';
-import { getKeyName, findKeyByHash, createKey, deleteKey } from './openrouter';
+import { getKeyName, findKeyByHash, getKeyPresence, createKey, deleteKey } from './openrouter';
 import { createTinfoilKey, deleteTinfoilKey } from './tinfoil';
 import { generateBayleafToken } from './utils/token';
 import { callerAuthority } from './sandboxCredentials';
@@ -235,6 +235,16 @@ export async function ensureBackendKey(
  * speculatively. Passing the failed secret as the CAS expectation means two
  * concurrent healers converge on one replacement instead of thrashing, and a
  * request that healed while we were minting is respected rather than clobbered.
+ *
+ * For OpenRouter, a rejection is only a hint. Every heal mints a fresh daily
+ * budget and leaves the old key's spend behind, so a heal signal a caller can
+ * provoke is a budget reset on demand. That has happened twice: 403 on an
+ * exhausted cap, and 401 from a caller-chosen management path. So the heal
+ * proceeds only when the management API confirms the stored key is gone
+ * (404). A present key, a disabled key (an operator decision, not damage), or
+ * a failed lookup all refuse, and the caller sees the original error. Tinfoil
+ * has no single-key read, so its heals stay unconfirmed; only the fixed-path
+ * Sealed relay uses Tinfoil credentials.
  */
 export async function healBackendKey(
   row: UserKeyRow,
@@ -242,6 +252,13 @@ export async function healBackendKey(
   failed: string,
   env: Bindings,
 ): Promise<BackendCredential | null> {
+  if (kind === 'openrouter') {
+    const presence = row.or_key_hash ? await getKeyPresence(row.or_key_hash, env) : 'unknown';
+    if (presence !== 'absent') {
+      console.log(`Not healing openrouter key for ${row.email}: management API reports ${presence}`);
+      return null;
+    }
+  }
   console.log(`Healing ${kind} key for ${row.email}: upstream rejected the stored credential`);
   return swapBackendKey(row, kind, failed, env);
 }
@@ -304,7 +321,9 @@ export async function ensureUserRow(email: string, env: Bindings): Promise<UserK
  * This is the one place that still pays for an upstream read, because the
  * dashboard's whole job here is to show provider-side numbers that only exist
  * upstream. If the key is absent upstream despite being stored, heal and retry
- * once — the same one-inline-retry shape the inference path uses.
+ * once — the same one-inline-retry shape the inference path uses. A null
+ * lookup here may also mean an outage or a disabled key; `healBackendKey`
+ * re-checks and refuses those, so the page renders without numbers instead.
  *
  * Returns null when the user has no row, when minting failed, or when the key
  * could not be read after healing. Callers treat that as "render the page

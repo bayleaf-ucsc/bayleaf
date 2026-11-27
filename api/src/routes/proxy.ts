@@ -767,8 +767,15 @@ async function handleProxy(c: Context<AppEnv>): Promise<Response> {
     forceZdr(body);
     const cred = await resolveBackendCredential(auth, 'openrouter', c.env);
     if (!cred) return upstreamCredentialUnavailable(c);
-    return sendWithHeal(cred, c.env, (secret) =>
-      forwardJson(openRouterUrl, `Bearer ${secret}`, body));
+    // No sendWithHeal here, deliberately, even though the parsed body would make
+    // the call replayable. The caller chooses the upstream path, so a 401 is not
+    // evidence of a dead credential: a valid inference key gets 401 on
+    // management-only paths such as /keys. Healing on it would let any caller
+    // mint a fresh $5/day key at will, resetting their budget and any per-user
+    // cap from spend-limits.mjs. A truly dead key surfaces as 401 here and is
+    // healed by the next fixed-path route (/chat/completions, /responses,
+    // /decisions).
+    return forwardJson(openRouterUrl, `Bearer ${cred.secret}`, body);
   }
 
   // GET passthroughs have no request body and need no model-policy decision.

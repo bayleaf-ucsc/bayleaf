@@ -30,6 +30,27 @@ export async function findKeyByHash(hash: string, env: Bindings): Promise<OpenRo
   return result.data ?? null;
 }
 
+/** What the management API says about a key, keeping "gone" distinct from "couldn't tell". */
+export type KeyPresence = 'present' | 'disabled' | 'absent' | 'unknown';
+
+/**
+ * Ask the management API whether a key still exists. Only a 404 is `absent`:
+ * an outage, rate limit, or rejected management credential (itself a 401) is
+ * `unknown`, never evidence that the user's key is dead. Used to confirm a
+ * heal; see `healBackendKey`.
+ */
+export async function getKeyPresence(hash: string, env: Bindings): Promise<KeyPresence> {
+  const response = await fetch(`${OPENROUTER_API}/keys/${hash}`, {
+    headers: { 'Authorization': `Bearer ${env.OPENROUTER_PROVISIONING_KEY}` },
+  }).catch(() => null);
+  if (!response) return 'unknown';
+  if (response.status === 404) return 'absent';
+  if (!response.ok) return 'unknown';
+  const result = await response.json().catch(() => null) as { data?: OpenRouterKey } | null;
+  if (!result?.data) return 'unknown';
+  return result.data.disabled ? 'disabled' : 'present';
+}
+
 /**
  * Create a new API key.
  *

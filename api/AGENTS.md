@@ -191,10 +191,17 @@ only request was ever a `/sandbox/exec`.
 stored secret and treats an upstream 401/403 as the heal signal, retrying once
 inline (`sendWithHeal`). This is forced for Tinfoil, whose admin API has no
 single-key read (`GET /api/keys/{key}` is 405), so a proactive check would mean
-enumerating every key in the org on every request. Two routes deliberately do
-**not** retry because they stream the client's body and so cannot replay it:
-the `/v1/*` catch-all (returns the 401; a later replayable route heals) and the
-Sealed relay (heals without retrying, then asks the client to retry, because
+enumerating every key in the org on every request. Only routes with a
+BayLeaf-fixed upstream path may heal: on a caller-chosen path a valid key can
+get 401 (OpenRouter's management-only `/keys`), and healing that mints a fresh
+budget on demand. So the `/v1/*` catch-all **never heals** on GET or POST, even
+though its POST body is parsed and replayable (returns the 401; a later
+fixed-path route heals). This regressed once, in 277ed95, and is now guarded by
+`npm run test:grants`. As defense in depth, an OpenRouter heal also requires the
+management API to confirm the stored key is gone (404, `getKeyPresence`);
+present, disabled, or unknown refuses, so no upstream status code alone can
+mint budget. The Sealed relay cannot replay its body, so it
+heals without retrying, then asks the client to retry, because
 Sealed is the only consumer of Tinfoil credentials and would otherwise
 dead-end). OpenRouter heals only on 401: its 403 can mean a daily key cap was
 reached, and healing that would mint a fresh budget. Tinfoil heals on 401/403.
