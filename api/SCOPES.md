@@ -191,12 +191,11 @@ before the sandbox is resolved. `npm run test:sandbox-upload` covers it. The
 assumption that Toolbox honors single quotes was confirmed in production: an upload
 to `…/my dir/$(id)/a.txt` created exactly that one directory, with no strays.
 
-**Symlinks.** Uploads cannot create symlinks, so escaping the root needs one that
-the owner (or the owner's agent) already placed inside it. Accepted residual risk
-for v1, not mitigated with a realpath check. The consent and prefilled-link pages
-and the dashboard hint now warn that a link inside a bound folder can expose files
-outside it. Reproduced end to end on 2026-11-24: a read token bound to one folder read
-a file in another home directory folder through a symlink to the home directory.
+**Symlinks.** Uploads cannot create symlinks. Existing symlinks in a bound folder's
+path or contents can extend read or write access outside that folder. A contributor
+confirmed out-of-folder reads with synthetic data on 2026-11-24. The consent page,
+prefilled-link page, and dashboard warn about this accepted v1 risk. The API does
+not check resolved filesystem paths.
 
 **Wake and create.** Token calls may wake a sleeping sandbox and may create one if
 the grantor has none (today's `ensureSandbox` behavior). The consent page says so

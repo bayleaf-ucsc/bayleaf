@@ -62,16 +62,16 @@ Design, rationale and open questions are in
 real uses appear.
 
 `sandbox.files.read` admits `GET /sandbox/files/*` and `sandbox.files.write` admits
-`PUT /sandbox/files/*`, only inside the bound `sandbox_dirs`: 1–16 folder names
+`PUT /sandbox/files/*`. Requested paths are checked against the bound `sandbox_dirs`: 1–16 folder names
 (lowercase letters, digits and hyphens, at most 63 characters, starting with a letter
 or digit), each granting `/home/daytona/bayleaf-apps/<name>/` and everything below.
 Both need `sandbox_dirs`; `sandbox_dirs` without a sandbox-file scope, or the reverse,
 is `400 invalid_request`. The path check is lexical on the decoded path (trailing-slash
 prefix, at least one further segment, no empty, `.` or `..` segments, no quotes,
 backslashes or control characters); anything else is `403 insufficient_scope`.
-Symlinks already inside a folder are an accepted residual risk; the consent and
-prefilled-link pages warn about them. There is no listing,
-exec, status, keep-alive or delete.
+Symlinks in a bound folder's path or contents can extend the token's read or write
+access outside the folder. The consent page, prefilled-link page, and dashboard warn
+about this risk. There is no listing, exec, status, keep-alive or delete.
 
 Direct issuance names `sandbox_dirs` in `POST /grants`. Unlike inboxes, visitor apps
 name the folders themselves (a `sandbox_dirs` JSON array in the `/grants/authorize`
