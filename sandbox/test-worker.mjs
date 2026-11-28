@@ -26,7 +26,7 @@ const management = {
   async managed(input) {
     calls.push(['managed', input]);
     if (input.operation === 'wake-existing' && failWake) throw Error('synthetic unavailable');
-    if (input.operation !== 'wake-existing' && !['openchamber', 'opencode-web', 'code-server', 'dufs', 'ttyd'].includes(input.service))
+    if (input.operation !== 'wake-existing' && !['opencode-web', 'code-server', 'dufs', 'ttyd'].includes(input.service))
       return { status: 400, body: { error: 'invalid_operation' } };
     return managedReply ?? { status: 200, body: { phase: 'idle', machine: 'absent' } };
   },
@@ -50,7 +50,8 @@ assert.equal(response.headers.get('Link'), '</llms.txt>; rel="describedby"');
 assert.equal((await request('/', { method: 'HEAD' })).headers.get('Link'), '</llms.txt>; rel="describedby"');
 assert.equal(response.headers.get('Referrer-Policy'), 'strict-origin', 'native sign-in forms need an Origin header');
 let html = await response.text();
-assert(html.includes('OpenChamber'));
+assert(!html.includes('/services/openchamber') && !html.includes('openchamber-start'), 'retired hosted OpenChamber has no card');
+assert(html.includes('href="https://openchamber.dev/">OpenChamber</a>'), 'desktop OpenChamber is the next step');
 assert(!/nanobot/i.test(html), 'retired agent is not advertised');
 assert(html.includes('OpenCode Web'));
 assert(html.includes('code-server'));
@@ -59,10 +60,10 @@ assert(html.includes('Shell (ttyd)'));
 assert(!/collabmd/i.test(html), 'retired collaborative editor is not advertised');
 assert(html.includes('VS Code (code-server)'));
 assert(html.includes('A small computer in the cloud'));
-assert(html.includes('install it on your own computer'));
+assert(html.includes('on your own computer'));
 assert(!html.includes('App help &amp; diagnostics'));
 assert(html.includes('class="callout"'), 'retention warning is outside disclosures');
-for (const url of ['https://openchamber.dev/', 'https://opencode.ai/docs/cli/web',
+for (const url of ['https://opencode.ai/docs/cli/web',
   'https://github.com/coder/code-server', 'https://jupyter.org/',
   'https://github.com/sigoden/dufs', 'https://tsl0922.github.io/ttyd/']) {
   assert(html.includes('href="'+url+'">'+url+'</a>'), 'upstream URL is fully visible');
@@ -107,36 +108,37 @@ for (let i=0; i<3; i++) {
   assert.match(response.headers.get('Cache-Control'), /\bno-store\b/);
   assert(!html.includes('<script>untrusted</script>'));
   assert(!/collabmd|room_password|copy-password|copy-link|End sharing/i.test(html), 'retired sharing controls and presentation are absent');
-  assert.equal((await request('/services/openchamber/status', { cookie: sessionCookie })).status, 200);
+  assert.equal((await request('/services/opencode-web/status', { cookie: sessionCookie })).status, 200);
 }
 assert.equal(mutations().length, 1, 'refresh and status never repeat login wake');
 assert(html.includes('id="code-server-start"'));
 assert(html.includes('id="opencode-web-start"'));
 assert(!html.includes('screen-connect') && !html.includes('screen-frame') && !html.includes('<iframe'), 'signed-in hero remains static');
-assert(html.includes('Start with OpenChamber'));
+assert(html.includes('Start with OpenCode Web'));
 assert.match(html, /id="desktop-open"[^>]+target="_blank"/);
 const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
 assert.equal(new Set(ids).size,ids.length,'service controls have unique ids');
-for (const service of ['opencode-web', 'code-server', 'dufs', 'ttyd', 'unknown']) {
+for (const service of ['opencode-web', 'code-server', 'dufs', 'ttyd', 'openchamber', 'unknown']) {
   const path='/services/'+service;
+  const live=!['openchamber','unknown'].includes(service);
   assert.equal((await request(path+'/status')).status,401);
-  assert.equal((await request(path+'/status',{cookie:sessionCookie})).status,service!=='unknown'?200:400);
+  assert.equal((await request(path+'/status',{cookie:sessionCookie})).status,live?200:400);
   assert.equal((await request(path+'/start',{method:'POST',cookie:sessionCookie})).status,403);
   assert.equal((await request(path+'/start',{method:'POST',cookie:sessionCookie,
-    headers:{Origin:origin,'X-BayLeaf-Action':'managed-service'}})).status,service!=='unknown'?200:400);
+    headers:{Origin:origin,'X-BayLeaf-Action':'managed-service'}})).status,live?200:400);
   assert.equal((await request(path+'/stop',{method:'POST',cookie:sessionCookie})).status,403);
   assert.equal((await request(path+'/stop',{method:'POST',cookie:sessionCookie,
-    headers:{Origin:origin,'X-BayLeaf-Action':'managed-service'}})).status,service!=='unknown'?200:400);
+    headers:{Origin:origin,'X-BayLeaf-Action':'managed-service'}})).status,live?200:400);
 }
-assert.equal((await request('/services/openchamber/start', { method: 'POST' })).status, 401);
-assert.equal((await request('/services/openchamber/start', { method: 'POST', cookie: sessionCookie,
+assert.equal((await request('/services/opencode-web/start', { method: 'POST' })).status, 401);
+assert.equal((await request('/services/opencode-web/start', { method: 'POST', cookie: sessionCookie,
   headers: { Origin: 'https://chat.bayleaf.dev', 'X-BayLeaf-Action': 'managed-service' } })).status, 403);
-assert.equal((await request('/services/openchamber/start', { method: 'POST', cookie: sessionCookie,
+assert.equal((await request('/services/opencode-web/start', { method: 'POST', cookie: sessionCookie,
   headers: { Origin: origin } })).status, 403);
-assert.equal((await request('/services/openchamber/start', { method: 'POST', cookie: sessionCookie,
+assert.equal((await request('/services/opencode-web/start', { method: 'POST', cookie: sessionCookie,
   headers: { Origin: origin, 'X-BayLeaf-Action': 'managed-service' } })).status, 200);
-assert.deepEqual(calls.at(-1), ['managed', { session: 'synthetic-session', service: 'openchamber', operation: 'start' }]);
-assert.equal((await request('/services/openchamber/start', { cookie: sessionCookie })).status, 405);
+assert.deepEqual(calls.at(-1), ['managed', { session: 'synthetic-session', service: 'opencode-web', operation: 'start' }]);
+assert.equal((await request('/services/opencode-web/start', { cookie: sessionCookie })).status, 405);
 // Desktop embed: same exact-Origin action protections; desktop only; never a lifecycle call.
 const beforeEmbed = mutations().length;
 const embedHeaders = { Origin: origin, 'X-BayLeaf-Action': 'managed-service' };
@@ -151,7 +153,7 @@ response = await request('/services/desktop/embed', { method: 'POST', cookie: se
 assert.equal(response.status, 200);
 assert.match(response.headers.get('Cache-Control'), /no-store/);
 assert.deepEqual(calls.at(-1), ['embed', { session: 'synthetic-session' }]);
-for (const other of ['openchamber', 'code-server', 'unknown']) {
+for (const other of ['opencode-web', 'code-server', 'unknown']) {
   assert.equal((await request('/services/'+other+'/embed', { method: 'POST', cookie: sessionCookie, headers: embedHeaders })).status, 404);
 }
 assert.equal(calls.filter(([name]) => name === 'embed').length, 1, 'only Desktop mints embed codes');
@@ -163,7 +165,7 @@ authenticated = false;
 response = await request('/', { cookie: sessionCookie });
 assert.match(response.headers.get('Set-Cookie'), /Max-Age=0/);
 assert.equal((await request('/', { host: 'https://attacker.example' })).status, 400);
-assert.equal((await request('/services/openchamber/status', { method: 'OPTIONS' })).status, 405);
+assert.equal((await request('/services/opencode-web/status', { method: 'OPTIONS' })).status, 405);
 assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
 for (const flag of [undefined, 'false', 'TRUE', true]) {
   assert(!(await (await request('/', { browserArrivalsEnabled: flag })).text()).includes('BayLeafArrival'));
@@ -177,7 +179,7 @@ authenticated = true;
 response = await request('/', { cookie: sessionCookie, browserArrivalsEnabled: 'true' });
 assert(!(await response.text()).includes('BayLeafArrival'));
 assert(!response.headers.get('Content-Security-Policy').includes('telemetry.bayleaf.dev'));
-for (const path of ['/login', '/auth/callback', '/dashboard', '/services/openchamber/status']) {
+for (const path of ['/login', '/auth/callback', '/dashboard', '/services/opencode-web/status']) {
   assert(!(await (await request(path, { browserArrivalsEnabled: 'true' })).text()).includes('BayLeafArrival'));
 }
 // Neither page permits embedded desktops; default-src none also blocks frames.
@@ -206,12 +208,12 @@ for(const [snapshot,expected] of [
       addEventListener(){},replaceChildren(){}});
     return elements.get(id);
   };
-  const root={dataset:{service:'openchamber',endpoint:'/services/openchamber'},querySelector:element};
+  const root={dataset:{service:'opencode-web',endpoint:'/services/opencode-web'},querySelector:element};
   runInNewContext(controls,{URL,Date,document:{querySelectorAll:()=>[root],createElement:()=>({})},
     window:{addEventListener(){}},setTimeout(){},clearTimeout(){},setInterval(){},
     fetch:async()=>({ok:true,status:200,json:async()=>snapshot})});
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(!element('#openchamber-stop').hidden,expected,'stop visibility for '+JSON.stringify(snapshot));
+  assert.equal(!element('#opencode-web-stop').hidden,expected,'stop visibility for '+JSON.stringify(snapshot));
 }
 // Execute Desktop controls to prove page loads stay passive and Start stays explicit.
 function desktopPage(initial, {service='desktop', blockPopup=false}={}) {
@@ -295,7 +297,7 @@ const reply=(body,status=200)=>({ok:status<400,status,json:async()=>body});
 {
   for(const body of [v2Ready,{phase:'stopped',cleanup_pending:true,can_resume_cleanup:true}]) {
     managedReply={status:200,body};
-    const response=await request('/services/openchamber/status',{cookie:sessionCookie});
+    const response=await request('/services/opencode-web/status',{cookie:sessionCookie});
     assert.deepEqual(await response.json(),body,'adapter preserves v2 status capabilities');
   }
   managedReply=undefined;

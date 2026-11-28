@@ -29,7 +29,7 @@ test limitations accepted. Optional restricted-email creation is enabled.
   implement a small private operator runner only if needed. Local recovery drill
   passes. Both-ledger loss policy is decided: remain closed pending the incident's
   operator choice, never automatically reset endpoints or add a new ledger service.
-- [ ] **Managed installed-client qualification:** actual OpenChamber browser
+- [ ] **Managed installed-client qualification:** actual hosted OpenCode Web
   permissions, ten-minute refresh, managed relink,
   and receipt during confirmed host sleep followed by cursor reconciliation.
   Production controller derives ownership from authenticated email, with no

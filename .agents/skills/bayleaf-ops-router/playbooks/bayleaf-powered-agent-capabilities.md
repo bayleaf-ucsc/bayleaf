@@ -47,15 +47,16 @@ Reconfirm these source locations at each run. New clients join this inventory.
 
 | Surface | Source / delivery to inspect | What must be decided |
 |---|---|---|
-| Hosted OpenChamber / OpenCode | `api/sandbox-plugin/` tools and `skills/`; `api/src/routes/wellknown.ts`; installer in `api/scripts/browser-setup.py`; shared CLI/MCP in `api/sandbox-cli/` | Tool/skill registration in the actual workspace, native permissions, published package pin and refresh path |
+| Hosted OpenCode Web (Sandboxes) | `api/sandbox-plugin/` tools and `skills/`; `api/src/routes/wellknown.ts`; installer in `api/scripts/browser-setup.py`; shared CLI/MCP in `api/sandbox-cli/` | Tool/skill registration in the actual workspace, native permissions, published package pin and refresh path |
 | BayLeaf Chat | `chat/tools/`, `chat/skills/`, `chat/models/`; read `chat/AGENTS.md` and `chat/DESIGN.md` | Appropriate toolkit/model, grants versus default attachment, ordinary-user discoverability, mapping Chat identity to API authority |
 | Desktop OpenChamber / OpenCode | Standard and Sealed discovery/config in `api/src/routes/wellknown.ts`; public skill catalog in `api/src/routes/docs.ts`; setup guidance in `GETTING-STARTED.md` and `llms.ts`; any user-facing skill/plugin distribution identified there | What onboarding actually installs, useful advertised triggers, user consent, updates for existing installations, Standard/Sealed differences |
 | Main agent reference and HTTP docs | `api/src/routes/llms.ts` (`https://api.bayleaf.dev/llms.txt`), code-owned OpenAPI routes/schemas and `apiReference.ts` | Workflow orientation and accurate availability; exact contracts remain generated, not duplicated |
 
 OpenChamber is the primary graphical agent surface on desktop. OpenCode Web
-is a second hosted surface on the same BayLeaf agent bootstrap;
-review transferability of workflows without assuming identical capabilities or
-credential boundaries. Exclude retired surfaces (Nanobot) from exposure decisions.
+is the sole hosted agent surface, a lighter cloud workspace on the same BayLeaf
+OpenCode bootstrap; review transferability of workflows without assuming identical
+capabilities or credential boundaries. Exclude retired surfaces (hosted
+OpenChamber, Nanobot) from exposure decisions.
 
 The desktop row is an obligation, not a claim that a complete capability package
 already ships. Trace actual distribution before naming a canonical owner. Do not

@@ -7,24 +7,25 @@ credential store. See the release qualification below for remaining limits.
 
 ## Hosted wiring (2026-10-24)
 
-Deliberate OpenChamber setup installs the shared executable before
+Deliberate hosted OpenCode Web setup installs the shared executable before
 configuration and registers `bayleaf mcp` through absolute installed-source and
-Node paths. OpenChamber is the primary graphical agent surface on desktop and in
-the sandbox; this executable remains sandbox-only. Nanobot was retired on
-2026-11-04. Its dated release evidence below is historical, not current setup or
+Node paths. OpenChamber is the primary graphical agent surface on desktop; hosted
+OpenCode Web is the sandbox agent, and this executable remains sandbox-only.
+Hosted OpenChamber, the original wiring target, was retired in the 2026-11-28
+revision (deployed 2026-11-28: API `74b94721`, Sandboxes `d3711627`, plugin `d4f8ae0`). Nanobot was retired on 2026-11-04. Its dated release evidence below is historical, not current setup or
 publication guidance. Preserve existing user files, histories and owner-edit guards.
 
 - OpenCode V2 uses `mcp.servers.sandbox`, `codemode: false`: native tools named
   `sandbox_click`, `sandbox_screenshot`, etc. Proxy/CA child settings are allowlisted;
   no credentials or arbitrary NODE_OPTIONS enter settings. Managed credentials
   remain automatically discovered and literal Daytona placeholders unchanged.
-- OpenChamber's plugin switches only when deliberate setup supplies
+- The hosted agent's plugin switches only when deliberate setup supplies
   `BAYLEAF_SHARED_MCP=true`. It keeps native websearch/webfetch, usage, exact-byte
   inbox saves, message deletion and inbox destruction. All overlapping preview
   and inbox registrations disappear. Existing processes without the flag retain
   their old tools during remote package refresh. No desktop/general-OS wiring.
 - One shared `bayleaf-sandbox-orientation` replaces managed environment/Inboxes
-  recipe skills. OpenChamber retains `bayleaf-scheduling`.
+  recipe skills. (Hosted OpenChamber also retained `bayleaf-scheduling` until its retirement.)
   Edited managed skills or an occupied owner-authored `sandbox` MCP entry fail
   visibly, never overwritten. No personal skills, memory or schedules are removed.
 - **Approval difference:** OpenCode seeds native `sandbox_*` ask rules and specific
@@ -35,7 +36,7 @@ publication guidance. Preserve existing user files, histories and owner-edit gua
 Publication procedure: review and publish the two-file `api/sandbox-plugin` change to
 `bayleaf-ucsc/opencode-sandbox`, preserving a remotely advertised release ref.
 Strict plugin clean/published builds must pass before an approved
-API deployment. Then qualify an explicitly authorized managed OpenChamber setup,
+API deployment. Then qualify an explicitly authorized managed OpenCode Web setup,
 native image rendering/consent, placeholder substitution and fresh-agent behavior.
 No migration or frontend deployment is required for this wiring itself. Existing
 clients update only at deliberate setup; source tests are not live UI evidence.
@@ -153,7 +154,7 @@ source. It writes `~/.local/share/bayleaf/cli/bayleaf.mjs` (0700) and symlinks
 `/usr/local/bin/bayleaf` when writable, otherwise `bayleaf` beside the existing
 PATH-resolved Node executable, only when its directory is same-UID, writable and
 not group/world-writable. That normal PATH location is intended for terminals,
-OpenChamber children, not just a launcher-specific PATH. Occupied paths
+hosted agent children, not just a launcher-specific PATH. Occupied paths
 or lack of write permission fail with `cli_path_conflict`/`cli_path_unavailable`,
 not sudo, an implicit lifecycle operation or a false successful install.
 Adam's live Linux image qualified the Node-directory fallback; other images and
@@ -164,7 +165,7 @@ Desktop's Toolbox-managed activation does not run this installer.
 
 Use `BAYLEAF_API_KEY` when present. MCP children without it read the existing
 managed `credentials/owner-key` from fixed BayLeaf service locations, in order
-browser, opencode-web, ttyd, jupyter, code-server, dufs. No new credential
+opencode-web, ttyd, jupyter, code-server, dufs. No new credential
 copy is persisted. Files must be regular, same-UID, mode 0600 or stricter, bounded
 and not final-component symlinks. An invalid present environment/file fails closed.
 Literal `dtn_secret_` placeholders are preserved for Daytona HTTPS substitution.

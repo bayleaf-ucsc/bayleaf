@@ -1,5 +1,31 @@
 # Browser sandbox lifecycle
 
+**Hosted OpenChamber retired in the 2026-11-28 revision (deployed 2026-11-28: API `74b94721`, Sandboxes `d3711627`, plugin `d4f8ae0`):**
+OpenCode Web (`opencode-web`) is now the sole managed agent interface in
+Sandboxes. The sandbox is deliberately a lighter, smaller cloud workspace, not a
+second desktop: the full graphical agent experience is desktop OpenChamber,
+which remains the recommended desktop app with BayLeaf API and which people are
+encouraged to adopt when they can. Lighter services launch faster and could allow
+smaller sandboxes later; that reduction is a separate, measured follow-up, and
+OpenCode Web and code-server still declare 2-GiB floors.
+
+- `SERVICE_DEFS.openchamber` is removed. Port 3100 is no longer reserved, and
+  legacy `__browser` slot links fail closed at the gateway.
+- The installer's OpenChamber adapter is removed: npm `@openchamber/web`
+  installation, OpenChamber-delegated OpenCode installation, the BayLeaf light
+  theme and Clef Flash classifier seeding (issue #168). `--service` is now
+  required; there is no default service.
+- The ordinary-key `GET /sandbox/browser/status` and
+  `POST /sandbox/browser/{start,restart,stop}` routes are removed. Only
+  browser-session `POST /sandbox/browser/access/{revoke,rotate}` remain, used by
+  the API dashboard. Managed apps are controlled from Sandboxes.
+- Public previews can no longer be framed by a hosted OpenChamber origin.
+- Existing files and histories under `~/.local/share/bayleaf/browser` are
+  preserved, not deleted (as with Nanobot). Running OpenChamber processes end
+  when the sandbox next sleeps. The rollout wakes or modifies no user sandbox.
+
+OpenChamber-specific text below is historical unless stated otherwise.
+
 **OpenCode Web terminal fix (deployed 2026-11-23):** the controller registers
 the owner-gated preview before launching OpenCode, then passes only its exact
 HTTPS origin to `serve --cors`. OpenCode 2.4.1 checks the origin of terminal
@@ -32,7 +58,7 @@ is tied to the sandbox credential, not the preview link. Existing first-release
 runtimes migrate once on their next deliberate setup. The browser does not
 need an OpenCode pairing cookie. No new public API, migration, desktop setup,
 or BayLeaf Chat tool is introduced. The legacy `/sandbox/browser/*` HTTP routes
-continue to operate on OpenChamber.
+continued to operate on OpenChamber (removed in the 2026-11-28 revision).
 
 API Worker `72b01f88-2463-43c5-8b6b-295aff03af68`; Sandboxes Worker
 `a4f15dac-295e-409a-b378-d06205d65cca`. Public readback confirmed the new card.
@@ -88,8 +114,8 @@ Browser → Sandboxes dashboard → private API management binding
                             └→ Toolbox: transfer setup, launch, inspect breadcrumbs
 
 Ready browser → private nonce origin → existing preview Worker/connection DO
-                                     → private Daytona preview → OpenChamber
-                                                                → local OpenCode
+                                     → private Daytona preview → managed app
+                                                                (e.g. OpenCode Web)
                                                                 → BayLeaf inference
 ```
 
@@ -146,19 +172,15 @@ when the workspace becomes ready.
 Plugin tests (13), installer tests (16), lifecycle checks (17), TypeScript, and
 the synthetic browser preview passed; live authenticated config selects the pin.
 
-All endpoints accept an ordinary personal BayLeaf key. Campus Pass and temporary
-inference tokens are excluded. The API endpoints retain their existing API browser
-session support; mutations require exact same-origin `Origin` and
-`X-BayLeaf-Action: sandbox-browser`. The Sandboxes dashboard uses its separate
+The ordinary-key endpoints formerly listed here (`GET /sandbox/browser/status`,
+`POST /sandbox/browser/{start,restart,stop}`) drove only OpenChamber and were
+removed in the 2026-11-28 revision. The API keeps only browser-session
+`POST /sandbox/browser/access/{revoke,rotate}` for its dashboard: no bearer,
+Campus Pass or sandbox credential; exact same-origin `Origin` and
+`X-BayLeaf-Action: sandbox-browser` are required. The Sandboxes dashboard uses its separate
 host-only session and `X-BayLeaf-Action: managed-service` on same-origin service
 POSTs. Its private binding resolves owner identity server-side and calls the same
 controller. Ownership never comes from request JSON.
-
-| Endpoint | Effect |
-| --- | --- |
-| `GET /sandbox/browser/status` | Inspect controller metadata and passive control-plane status only |
-| `POST /sandbox/browser/start` | Join active setup, reuse a ready link, or set up/resume browser access |
-| `POST /sandbox/browser/restart` | Repair setup and restart the managed browser interface |
 
 Start/restart returns 202 while opening. Concurrent requests converge on one
 operation. The dashboard polls while setup is opening, not throughout ordinary
@@ -177,8 +199,9 @@ No OpenChamber Desktop discovery or background reconnect can start compute or re
 The gateway caps the managed preview at the controller deadline and binds it
 to a hash of the current owner key. Rotation/revocation denies new gateway
 requests; socket sweep/revocation follows the existing preview contract.
-Only managed browser previews forward `X-Opencode-Directory` for OpenChamber
-workspace selection. This header has no role in gateway authentication.
+`X-Opencode-Directory` was first forwarded only for OpenChamber workspace
+selection; since 2026-10-27 it reaches any app as an ordinary header
+(`PREVIEWS.md`). It has no role in gateway authentication.
 
 Expired/unknown preview navigation offers a fixed link to BayLeaf Sandboxes.
 Cached application/service-worker pages can still appear on an old origin;
@@ -230,7 +253,8 @@ owner-key authorization, using the existing migration 0013 column. Only the
 legacy OpenChamber slot may frame public previews or forward `X-Opencode-Directory`.
 Public keyed exposure rejects all managed ports. No new migration is required.
 
-The installer defaults to OpenChamber; `--service code-server` selects named
+The installer defaulted to OpenChamber (`--service` is required since the
+2026-11-28 revision); `--service code-server` selects named
 editor adapters. OpenChamber's state root and legacy `operation` DO key remain
 unchanged. The editor uses `operation/code-server`; dufs uses `operation/dufs`. Only OpenChamber receives
 the inference credential or runs Node/OpenCode prerequisites and BayLeaf bootstrap.
@@ -364,8 +388,9 @@ launch only Shell (ttyd) and qualify owner/non-owner HTTP+WS and sibling apps.
 ### V2 plugin integration
 
 The Worker uses `sandbox-plugin/` for web search, page extraction, and curated
-skills, with live sandbox-specific well-known config. Fresh setup installs
-current OpenChamber and delegates OpenCode installation to it. The plugin is the submodule
+skills, with live sandbox-specific well-known config. Fresh OpenCode Web setup
+installs its pinned, verified OpenCode release (until the 2026-11-28 revision,
+OpenChamber setup delegated OpenCode installation to OpenChamber). The plugin is the submodule
 `https://github.com/bayleaf-ucsc/opencode-sandbox`; the build derives its full
 Git pin from the clean checkout. Push plugin changes before deploying the
 Worker. The main repo's submodule update can remain uncommitted during evaluation.
@@ -416,9 +441,15 @@ headers correctly return 401 rather than redirecting.
 `scripts/browser-setup.py` is embedded in the Worker as text. It uses Python's
 standard library and a narrow Linux/Node-22-or-newer starting environment.
 It reports unsupported prerequisites rather than installing arbitrary system
-packages or repairing a mutated machine. It requires at least 2 GiB RAM and
-1.5 GiB free disk for installation. Existing completed installations skip the
-package-install step.
+packages or repairing a mutated machine. Per-service adapters declare their
+own memory and disk floors (OpenCode Web: 2 GiB RAM, 1 GiB free disk). Existing
+completed installations skip the package-install step.
+
+**Historical (OpenChamber, retired in the 2026-11-28 revision):** the layout,
+npm installation, OpenCode delegation, theme and classifier paragraphs below
+describe the removed OpenChamber adapter. Its root is preserved on existing
+machines but no longer written. Other services use a similar layout under
+`~/.local/share/bayleaf/<service>`.
 
 Managed root: `/home/daytona/.local/share/bayleaf/browser`, mode 0700.
 
@@ -505,7 +536,8 @@ browser URLs, or setup stdout. Inference stays on BayLeaf's ZDR path; sandbox
 files, histories, configuration, and credentials deliberately persist and are
 not zero-operator-access data.
 
-Port 3100 is reserved for OpenChamber; 8791 for code-server; 8790 for dufs. The local
+Port 3100 was reserved for OpenChamber until the 2026-11-28 revision; 8791 is
+reserved for code-server and 8790 for dufs. The local
 managed-service revision changes restart behavior for both: only the recorded
 runtime process group is terminated after PID/start-time/boot-ID verification.
 An unrelated listener is left alone and produces `port_in_use`. Earlier deployments
@@ -657,7 +689,7 @@ reset require separate explicit choices and prior export of wanted data.
 The Nanobot preview, first published for owner evaluation on 2026-10-09, was retired
 on 2026-11-04. Its investigation remains historical evidence, not a supported
 installation or publication workflow. OpenChamber is the primary graphical agent
-surface on desktop and in the sandbox. Retirement does not authorize erasing
+surface on desktop; hosted OpenCode Web is the sandbox agent. Retirement does not authorize erasing
 existing user files, credentials or conversation history.
 
 ## Code-server defaults

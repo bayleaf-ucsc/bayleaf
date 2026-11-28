@@ -42,7 +42,7 @@ This is a rough checklist built from repo conventions: adapt it to the facet.
    all; new public surface is a strategic call, not an operational one.
 6. **Agent capability exposure.** Run `bayleaf-powered-agent-capabilities.md`
    before calling the facet complete: decide discovery and invocation across
-   hosted OpenChamber, Chat, desktop agents and `llms.txt`. Record
+   hosted OpenCode Web, Chat, desktop agents and `llms.txt`. Record
    deliberate omissions/deferrals; updating HTTP docs alone is not exposure.
 7. **Roll out in dependency order, once approved:** storage migrations, then the new
    Worker, then the API and its binding.

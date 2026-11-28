@@ -52,7 +52,6 @@ const fixture = createServer(async (req,res) => {
   if (path === '/whoami') return res.end(JSON.stringify({credential:'key',email:'fixture@ucsc.edu'}));
   if (path === '/directory/fixture') return res.end(JSON.stringify({cruzid:'fixture',name:'Fixture',title:null,email:null,phone:null,details:{},links:[],source_url:'https://campusdirectory.ucsc.edu/cd_detail?uid=fixture'}));
   if (path === '/sandbox') return res.end(JSON.stringify({state:'started'}));
-  if (path === '/sandbox/browser/status') return res.end(JSON.stringify({phase:'ready'}));
   if (path === '/sandbox/expose') {
     assert.equal(req.method,'POST');
     assert.equal(req.headers.authorization,'Bearer sk-bayleaf-synthetic');
@@ -165,7 +164,6 @@ try {
   await wait(()=>api('/api/info').catch(error=>{if(child.exitCode!==null)throw new Error(logs.slice(-2000));throw error;}));
   await mkdir(join(root,'credentials'),{recursive:true});
   await writeFile(join(root,'credentials/owner-key'),'sk-bayleaf-synthetic');
-  await writeFile(join(root,'credentials/opencode-password.json'),JSON.stringify('synthetic-password'));
   const operation='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
   await writeFile(join(root,'request.json'),JSON.stringify({operation,deadline:Math.floor(Date.now()/1000)+1200}));
   const installer=fileURLToPath(new URL('./browser-setup.py',import.meta.url));
@@ -177,12 +175,12 @@ spec=importlib.util.spec_from_file_location('installer',${JSON.stringify(install
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 m.ROOT=Path(${JSON.stringify(root)})
 m.Path.home=lambda:Path(${JSON.stringify(root)})
-m.bootstrap(${port},${JSON.stringify(operation)},${JSON.stringify(origin)})
+m.bootstrap(${port},${JSON.stringify(operation)},'synthetic-password',origin=${JSON.stringify(origin)})
 `],{stdio:['ignore','pipe','pipe']});
     let output='';process.stderr.on('data',d=>output+=d);
     const [code]=await once(process,'exit');assert.equal(code,0,output);
   };
-  // OpenChamber can discover the workspace before bootstrap connects BayLeaf.
+  // The browser can discover the workspace before bootstrap connects BayLeaf.
   assert.ok(!(await api('/api/plugin')).data.some(p=>p.id==='bayleaf.sandbox'));
   await bootstrap();await bootstrap();
   assert.equal((await api('/api/credential')).data.length,1,'repeated bootstrap duplicated credentials');
@@ -191,8 +189,7 @@ m.bootstrap(${port},${JSON.stringify(operation)},${JSON.stringify(origin)})
   assertRequiredTools(first.output.tools);
   const skillData=first.output.skills.data??first.output.skills;
   assert.ok(skillData.some(s=>s.id==='bayleaf-sandboxes'));
-  assert.ok(skillData.some(s=>s.id==='bayleaf-scheduling'&&s.description.includes('schedule.*')),
-    'scheduling guidance must be discoverable from the installed plugin');
+  assert.ok(!skillData.some(s=>s.id==='bayleaf-scheduling'),'OpenChamber scheduling guidance was retired');
   assert.equal(skillData.find(s=>s.id==='bayleaf-fixture').content,'Revision a');
   assert.ok(!first.output.tools.some(t=>t.id==='bayleaf_fixture_new'));
   console.log('PASS real V2 bootstrap and tool/skill registration');

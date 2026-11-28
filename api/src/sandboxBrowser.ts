@@ -26,7 +26,9 @@ type Phase = 'opening' | 'ready' | 'failed' | 'expired' | 'stopped';
 type Step = 'discover' | 'credentials' | 'wake' | 'prepare' | 'inspect' | 'register' | 'verify-resume';
 interface ProgressEvent { step: string; at: number; error?: string }
 interface Operation {
-  service?: ServiceId; // Missing on legacy OpenChamber operations.
+  // Retired OpenChamber records (unnamed `operation` key) are never read again;
+  // their `__browser` slot links fail closed at the gateway.
+  service: ServiceId;
   nextAt?: number;
   invalidated?: boolean;
   email: string;
@@ -150,7 +152,7 @@ PY`;
 const launch = (operation: string, def: ServiceDef) => `python3 -c ${JSON.stringify(
   `import subprocess; subprocess.Popen(['python3','${def.root}/setup.py','--service','${def.id}','setup','--operation','${operation}'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)`
 )}`;
-const operationKey = (service: ServiceId = 'openchamber') => service === 'openchamber' ? 'operation' : `operation/${service}`;
+const operationKey = (service: ServiceId) => `operation/${service}`;
 const dueAt = (op: Operation) => op.phase === 'ready' ? op.deadline * 1000 :
   op.phase === 'opening' ? Math.min(op.nextAt ?? 0, op.setupDeadline * 1000, op.deadline * 1000) :
   op.launchAfterCleanup ? Math.min(op.nextAt ?? 0, op.launchAfterCleanup.deadline * 1000) :
@@ -214,14 +216,14 @@ export class SandboxBrowser {
     op.phase = phase; op.error = error; delete op.url; delete op.launchAfterCleanup;
     await this.save(op);
     await this.arm();
-    op.invalidated = await revokeUserPreview(this.env, op.email, SERVICE_DEFS[op.service ?? 'openchamber'].slot);
+    op.invalidated = await revokeUserPreview(this.env, op.email, SERVICE_DEFS[op.service].slot);
     await this.save(op);
   }
   private async linkDeadline(op: Operation) {
     if (!op.url) return 0;
     const record = await this.env.DB.prepare(`SELECT expires_at FROM preview_registrations
       WHERE hostname=? AND email=? AND deployment='__browser' AND slot=? AND owner_key_hash=?`)
-      .bind(new URL(op.url).hostname, op.email, SERVICE_DEFS[op.service ?? 'openchamber'].slot, op.ownerKeyHash)
+      .bind(new URL(op.url).hostname, op.email, SERVICE_DEFS[op.service].slot, op.ownerKeyHash)
       .first<{ expires_at: number }>();
     return Math.min(op.deadline, record?.expires_at ?? 0);
   }
@@ -239,11 +241,11 @@ export class SandboxBrowser {
       if (!m || m.state === 'stopped') {
         // Sleep has removed processes. Never wake merely to clean up an app.
         op.cleanupPending = false;
-      } else if (m.state === 'started' && SERVICE_DEFS[op.service ?? 'openchamber'].driver === 'computeruse') {
+      } else if (m.state === 'started' && SERVICE_DEFS[op.service].driver === 'computeruse') {
         op.processesReaped = await stopDesktop(this.env, m.id);
         op.cleanupPending = false;
       } else if (m.state === 'started') {
-        const def = SERVICE_DEFS[op.service ?? 'openchamber'];
+        const def = SERVICE_DEFS[op.service];
         // Transfer the current stop implementation, including for older installs.
         // Keep it separate from a setup.py that may still be executing.
         await execute(this.env, m.id, `mkdir -p ${def.root}`);
@@ -278,7 +280,7 @@ export class SandboxBrowser {
     await this.arm();
     return response({ phase: op.phase, operation: op.operation }, 202);
   }
-  private async view(email: string, service: ServiceId = 'openchamber') {
+  private async view(email: string, service: ServiceId) {
     const op = await this.state.storage.get<Operation>(operationKey(service));
     const row = await getAccountRow(email, this.env);
     if (!row) return response({ phase: 'unavailable', error: 'personal_key_required' }, 403);
@@ -374,7 +376,7 @@ export class SandboxBrowser {
         });
       }
       if (!browserEnabled(this.env)) return response({ error: 'browser_disabled' }, 503);
-      const def = serviceDef(u.searchParams.get('service') ?? 'openchamber');
+      const def = serviceDef(u.searchParams.get('service'));
       if (!def) return response({ error: 'invalid_operation' }, 400);
       if (req.method === 'GET' && u.pathname === '/status') return await this.view(email, def.id);
       if (req.method !== 'POST' || !['/start', '/restart', '/stop'].includes(u.pathname)) return response({ error: 'not_found' }, 404);
@@ -404,9 +406,9 @@ export class SandboxBrowser {
         if (!recoverCleanup && (previous?.cleanupPending || (previous?.phase === 'stopped' && !previous.invalidated))) {
           return response({ error: 'process_cleanup_pending' }, 409);
         }
-        const other = (await this.operations()).find(op => (op.service ?? 'openchamber') !== def.id &&
+        const other = (await this.operations()).find(op => op.service !== def.id &&
           (op.phase === 'opening' || (op.launchAfterCleanup?.deadline ?? 0) > now()));
-        if (other) return response({ error: 'service_busy', service: other.service ?? 'openchamber' }, 409);
+        if (other) return response({ error: 'service_busy', service: other.service }, 409);
         if (recoverCleanup) {
           if ((previous.launchAfterCleanup?.deadline ?? 0) <= now()) {
             previous.launchAfterCleanup = { deadline: now() + RESUME_SECONDS, restart: u.pathname === '/restart' };
@@ -464,7 +466,7 @@ export class SandboxBrowser {
     });
   }
   private async advance(op: Operation) {
-      const def = SERVICE_DEFS[op.service ?? 'openchamber'];
+      const def = SERVICE_DEFS[op.service];
       const relayPort = op.appAuthRelay ? appAuthRelayPort(def) : null;
       const ROOT = def.root;
       const INSTALL_STEPS = new Set<string>(def.steps);
@@ -624,7 +626,7 @@ export class SandboxBrowser {
             await this.save(op); // A crash here resumes via inspect, then relaunch.
             await execute(this.env, id, launch(op.operation, def));
           } else if (op.step === 'inspect') {
-            const text = await execute(this.env, id, `python3 ${ROOT}/setup.py${def.id === 'openchamber' ? '' : ` --service ${def.id}`} inspect`);
+            const text = await execute(this.env, id, `python3 ${ROOT}/setup.py --service ${def.id} inspect`);
             if (text.length > 8192) fail('invalid_setup_status');
             const result = JSON.parse(text) as Record<string, unknown>;
             const phases = ['checking', 'installing', 'configuring', 'starting', 'ready', 'failed'];
@@ -652,8 +654,7 @@ export class SandboxBrowser {
               if (result.phase === 'failed') {
                 fail(SETUP_ERRORS.has(String(result.error)) ? String(result.error) : 'setup_failed');
               }
-              if (result.phase === 'ready' && result.ready === true && result.port === def.port &&
-                  (result.service === def.id || (def.id === 'openchamber' && result.service === undefined))) {
+              if (result.phase === 'ready' && result.ready === true && result.port === def.port && result.service === def.id) {
                 if (def.id === 'opencode-web' && op.url) {
                   if (result.preview_origin !== new URL(op.url).origin || await this.linkDeadline(op) <= now())
                     fail('preview_unavailable');

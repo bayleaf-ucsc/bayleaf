@@ -36,8 +36,8 @@ records, private per-user storage, or server-side validation.
 | Owner | `https://api.bayleaf.dev/rooms` | Owner's agent or script | Ordinary key or sandbox credential |
 | Participant | `https://bayleaf-rooms.dev/{room_id}` | Browsers, scripts, agents | Room credential `rk_...` (CORS open) |
 
-Who can own rooms: authenticated BayLeaf campus owners. In hosted OpenChamber
-sandboxes, calling the owner plane with `curl` and the sandbox credential is the
+Who can own rooms: authenticated BayLeaf campus owners. In hosted OpenCode
+(Sandboxes), calling the owner plane with `curl` and the sandbox credential is the
 sanctioned path. Never put an owner key or sandbox credential in an app, page,
 repo or link.
 

@@ -460,17 +460,6 @@ export function consumePreviewReturnTo(c: Context<AppEnv>): string | null {
   return /^[a-f0-9]{64}$/.test(id) ? `/previews/authorize?flow=${id}` : null;
 }
 
-/** Public apps may be embedded by this owner's current managed browser only. */
-async function browserFrameOrigin(env: Bindings, r: Registration): Promise<string | null> {
-  if (r.access !== 'public' || env.BROWSER_SANDBOX_ENABLED !== 'true') return null;
-  const parent = await env.DB.prepare(`SELECT hostname FROM preview_registrations
-    WHERE email=? AND deployment='__browser' AND slot='__browser' AND expires_at>? LIMIT 1`)
-    .bind(r.email, now()).first<{hostname:string}>();
-  if (!parent) return null;
-  const active = await registration(env, parent.hostname);
-  return active?.deployment === '__browser' && active.email === r.email ? `https://${active.hostname}` : null;
-}
-
 /** Host dispatch is before all API routes, wildcard CORS, and error logging. */
 export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
   try {
@@ -823,11 +812,6 @@ async function forward(c: Context<AppEnv>, r: Registration): Promise<Response> {
     if (!['GET', 'HEAD'].includes(c.req.method)) return failure(502);
     validators(upstream.headers, responseHeaders, target);
     return new Response(null, { status: 304, headers: responseHeaders });
-  }
-  const frameOrigin = await browserFrameOrigin(c.env, r);
-  if (frameOrigin) {
-    responseHeaders.delete('X-Frame-Options');
-    responseHeaders.set('Content-Security-Policy', `frame-ancestors 'self' ${frameOrigin}; worker-src 'self' blob:; object-src 'none'; base-uri 'self'`);
   }
   // Root-scoped workers (including code-server's) are confined to this unique
   // origin. Scope is never broadened across an origin boundary by this header.

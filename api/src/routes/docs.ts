@@ -396,7 +396,7 @@ scheduled checks need a separate, explicitly authorized execution plan.
 
 ## Follow the appropriate invocation path
 
-Hosted OpenChamber: use your installed sandbox orientation and Inboxes tools;
+Hosted OpenCode Web: use your installed sandbox orientation and Inboxes tools;
 do not bypass missing tools through shell
 commands or broader credentials. Desktop agents: use an authorized HTTP client or
 guide the user in their own terminal. No additional desktop plugin is required.

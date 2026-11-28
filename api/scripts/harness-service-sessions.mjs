@@ -124,8 +124,11 @@ try {
   assert(!JSON.stringify(stored).includes(login.session));
   assert.deepEqual(await rpc('readSession',{session:login.session}),{user:login.user,expiresAt:login.expiresAt});
   assert.equal((await rpc('managed',{session:login.session,service:'arbitrary',operation:'start'})).status,400);
-  assert.equal((await rpc('managed',{session:login.session,service:'openchamber',operation:'start',email:'victim@example.test'})).status,400);
-  for (const service of ['openchamber','code-server','dufs','ttyd']) for (const operation of ['status','start','restart','stop']) {
+  assert.equal((await rpc('managed',{session:login.session,service:'opencode-web',operation:'start',email:'victim@example.test'})).status,400);
+  // Retired managed apps are unknown services, exactly like arbitrary names.
+  for (const service of ['openchamber','nanobot','collabmd']) for (const operation of ['status','start','restart','stop'])
+    assert.equal((await rpc('managed',{session:login.session,service,operation})).status,400);
+  for (const service of ['opencode-web','code-server','dufs','ttyd']) for (const operation of ['status','start','restart','stop']) {
     const result = await rpc('managed',{session:login.session,service,operation});
     assert.equal(result.status,200);
     assert.deepEqual(result.body,{owner:login.user.email,path:'/'+operation,service});
@@ -161,7 +164,7 @@ try {
   assert.equal((await rpc('readSession',{session:login.session})).user.email,login.user.email);
   assert.ok((await db.prepare('SELECT last_active_at FROM users WHERE email=?').bind(login.user.email).first()).last_active_at > 0,
     'independent dashboard session refreshes user activity after ordinary-key revocation');
-  assert.equal((await rpc('managed',{session:login.session,service:'openchamber',operation:'start'})).status,200);
+  assert.equal((await rpc('managed',{session:login.session,service:'opencode-web',operation:'start'})).status,200);
   const revokedFlow = await start();
   const revokedCode = await issue(revokedFlow);
   const independent = await rpc('exchangeLogin',{flow:revokedFlow.flow,code:revokedCode,verifier:revokedFlow.verifier});
@@ -216,7 +219,7 @@ try {
   page=await navigate('home',homeOrigin+'/');
   assert.equal(page.status,200);assert((await page.text()).includes('integration@example.test'));
   assert.equal((await navigate('home',callback)).status,400,'completed browser callback cannot be replayed');
-  const service=await navigate('home',homeOrigin+'/services/openchamber/status');
+  const service=await navigate('home',homeOrigin+'/services/opencode-web/status');
   assert.equal(service.status,200);assert.equal((await service.json()).owner,'integration@example.test');
   assert.equal((await navigate('home',homeOrigin+'/logout','POST')).status,303);
   assert(!jars.home.has('__Host-bayleaf-sandbox-session'));

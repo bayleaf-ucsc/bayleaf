@@ -585,7 +585,7 @@ checkbox, so it is recorded rather than deleted.
 When adding, materially changing, enabling, or retiring an API capability, run
 `.agents/skills/bayleaf-ops-router/playbooks/bayleaf-powered-agent-capabilities.md`
 (relative to the repo root). It coordinates explicit exposure decisions across
-hosted OpenChamber, Chat, desktop agent skills and `llms.txt`; HTTP
+hosted OpenCode Web, Chat, desktop agent skills and `llms.txt`; HTTP
 documentation alone does not make a capability discoverable to configured agents.
 
 `/llms.txt` owns broad agent orientation, access choices, client setup and workflows
@@ -647,6 +647,17 @@ Run `npm run test:computer` and `npm run test:docs`. No adapter parity is claime
 
 ### Browser sandbox lifecycle (issue #81)
 
+**Hosted OpenChamber retired in the 2026-11-28 revision (deployed 2026-11-28: API `74b94721`, Sandboxes `d3711627`, plugin `d4f8ae0`):**
+OpenCode Web (`opencode-web`) is the sole managed agent interface; desktop
+OpenChamber remains the recommended desktop app. `SERVICE_DEFS.openchamber`
+(slot `__browser`, port 3100) and its installer adapter are removed; legacy
+`__browser` slot links fail closed. The ordinary-key `GET /sandbox/browser/status`
+and `POST /sandbox/browser/{start,restart,stop}` routes are gone; only browser-session
+`POST /sandbox/browser/access/{revoke,rotate}` remain for the API dashboard. Public
+previews are no longer framable by a hosted OpenChamber origin. Existing files and
+histories under `~/.local/share/bayleaf/browser` are preserved; running processes
+end at the next sleep; no sandbox is woken. See `SANDBOX-BROWSER.md`.
+
 **Desktop deployed 2026-10-24:** `SERVICE_DEFS.desktop` uses
 `driver: 'computeruse'`: Toolbox `/computeruse/start|status|stop` instead of the
 installer, never sandbox creation, a fixed private `__desktop` slot (x11vnc has
@@ -671,7 +682,7 @@ Deployed and enabled on 2026-10-03 (`BROWSER_SANDBOX_ENABLED=true`); see
 `SANDBOX-BROWSER.md` for the contract and rollout gates. The dedicated `sandbox/`
 dashboard owns managed-service controls; the API dashboard retains low-level
 machine controls. `src/sandboxBrowser.ts` exports an owner-scoped Durable
-Object, `routes/sandboxBrowser.ts` exposes session/ordinary-key operations, and
+Object, `routes/sandboxBrowser.ts` exposes session-only access revoke/rotate, and
 `scripts/browser-setup.py` is the embedded versioned Linux installer. Migration
 0013 binds managed preview generations to the current owner's key fingerprint.
 No personalized hostname or second workspace is created.

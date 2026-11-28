@@ -10,15 +10,16 @@ last-reviewed: 2026-10-05
 
 **BayLeaf Sandbox** is the persistent, isolated user workspace. **Browser
 workspace** names its interactive browser surface. Chat/Lathe and the API access
-the same sandbox files and processes. OpenChamber, OpenCode, and Daytona are
+the same sandbox files and processes. OpenCode Web, OpenCode, and Daytona are
 implementation names. Use them where operational precision matters, not as
 service branding. This playbook is for operators, never ship it to sandbox agents.
 
 Read `api/AGENTS.md` and `api/SANDBOX-BROWSER.md` for the canonical contracts.
 OpenChamber is the primary graphical agent surface on desktop. Hosted OpenCode
-Web is a second interface alongside hosted OpenChamber; favor
-transferable project instructions and skills without assuming shared app state.
-Retired apps (Nanobot, CollabMD) are out of scope: do not rebuild, publish,
+Web is the sole managed agent interface in the sandbox: a deliberately lighter
+cloud workspace, not a second desktop. Favor transferable project instructions
+and skills without assuming shared app state between desktop and sandbox.
+Retired apps (hosted OpenChamber, Nanobot, CollabMD) are out of scope: do not rebuild, publish,
 install or restart their adapters, and leave users' existing files untouched.
 `api/sandbox-plugin` is a submodule of `bayleaf-ucsc/opencode-sandbox`, owning
 tools and the environment skill. The parent owns API routes, launcher, remote
@@ -57,18 +58,13 @@ config, and deployment. There is no npm publication workflow for the plugin.
    against the pinned V2 binary for registration, API bootstrap and permission
    behavior. The internal plugin event stream has no HTTP connection-marker event:
    waiting for one hangs. Subscribe before requesting permission to avoid reply races.
-5. Fresh setup installs current OpenChamber in an updater-compatible global npm
-   prefix and delegates its OpenCode installation to OpenChamber. Do not override
-   that binary. The separate native OpenCode Web service owns its own pinned binary,
-   state and private preview. Test in an isolated HOME/XDG root, not the operator's service.
-   `scripts/test-openchamber-onboarding.py --prefix <global-prefix>` verifies the
-   current upstream installer, discovery, and update-prefix ownership. Read the
-   upstream module before changing this bridge: the web install action can
-   refuse a completely absent OpenCode, requiring direct invocation of its
-   installer. Locate it in the installed package; newer releases publish the
-   compiled server under `build/`, while older installs use `server/`.
+5. OpenCode Web owns its own pinned, verified OpenCode binary, state and private
+   preview; bump its release label, version and integrity together in
+   `api/scripts/browser-setup.py`.
+   Test in an isolated HOME/XDG root, not the operator's service.
    For application releases without an API digest, pin the publisher's checksum;
-   never relax verification.
+   never relax verification. Each service declares its own memory floor; shrinking
+   sandboxes is a separate, measured change.
 
 ## Publish and deploy
 

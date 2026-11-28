@@ -3,7 +3,14 @@
 `sandbox.bayleaf.dev` is the public service home for **BayLeaf Sandboxes**.
 Use singular “your sandbox” for an individual workspace. The hostname stays
 singular. The Worker serves a public overview and an authenticated managed-service
-dashboard. OpenChamber is the first service, not the name of the whole workspace.
+dashboard. OpenCode Web is the agent service, not the name of the whole workspace.
+
+Hosted OpenChamber was retired in the 2026-11-28 revision (deployed 2026-11-28: API `74b94721`, Sandboxes `d3711627`, plugin `d4f8ae0`).
+Desktop OpenChamber remains BayLeaf's recommended agent app: keep the sandbox a
+small, fast place to try things rather than a second desktop, and point routine
+agent work toward the desktop step. Prefer light managed services; a new launcher
+must earn its memory floor. Existing OpenChamber files under
+`~/.local/share/bayleaf/browser` are preserved, not deleted.
 
 `worker.js` owns same-origin HTTP/auth adapters; `page.tsx` owns presentation.
 `wrangler.jsonc` pins the BayLeaf account, domain and named API service binding.

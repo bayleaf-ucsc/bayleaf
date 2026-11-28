@@ -16,6 +16,10 @@ for (const key of ['port','root','slot']) assert.equal(new Set(Object.values(SER
 assert.equal(SERVICE_DEFS.ttyd.port,8794);
 assert.equal(SERVICE_DEFS.ttyd.credential,true);
 assert.ok(managedSlot('__ttyd'));
+// Hosted OpenChamber is retired: no definition, and its __browser slot is unmanaged.
+assert.ok(!Object.hasOwn(SERVICE_DEFS,'openchamber'));
+assert.ok(!managedSlot('__browser'));
+assert.ok(!Object.values(SERVICE_DEFS).some(def=>def.port===3100));
 
 const app = new Hono();
 app.get('/', () => renderSandboxPage({email:'owner@example.test',name:'Synthetic owner'}));
@@ -31,7 +35,7 @@ app.post('/__fixture/:state', c => {
 });
 for (const service of Object.keys(SERVICE_DEFS)) {
   app.get('/services/'+service+'/status', c => {
-    if (service !== 'openchamber') return c.json({phase:'idle',machine:'started'});
+    if (service !== 'opencode-web') return c.json({phase:'idle',machine:'started'});
     if (scenario === 'expired') return c.json({error:'session_expired'},401);
     if (phase === 'opening' && Date.now()/1000-startedAt >= 2) phase = scenario === 'failure' ? 'failed' : 'ready';
     return c.json({phase,machine:'started',started_at:startedAt,
@@ -42,7 +46,7 @@ for (const service of Object.keys(SERVICE_DEFS)) {
   });
   for (const action of ['start','restart','stop']) app.post('/services/'+service+'/'+action,c => {
     if (scenario === 'expired') return c.json({error:'session_expired'},401);
-    if (service !== 'openchamber') return c.json({error:'service_busy'},409);
+    if (service !== 'opencode-web') return c.json({error:'service_busy'},409);
     if (action==='stop') {phase='stopped';return c.json({phase,access_revoked:true,cleanup_pending:false});}
     phase = 'opening'; startedAt = Math.floor(Date.now()/1000); return c.json({phase});
   });
@@ -58,6 +62,7 @@ const scripts=[...html.matchAll(/<script nonce="([^"]+)">([\s\S]*?)<\/script>/g)
 assert.equal(scripts.length,1);
 assert.ok(page.headers.get('Content-Security-Policy').includes("script-src 'nonce-"+scripts[0][1]+"'"));
 for (const service of Object.keys(SERVICE_DEFS)) assert.ok(html.includes('data-endpoint="/services/'+service+'"'));
+assert.ok(!html.includes('data-endpoint="/services/openchamber"'),'retired OpenChamber has no dashboard control');
 assert.doesNotMatch(html,/progressbar|aria-valuenow|requestAnimationFrame/);
 console.log('PASS sandbox creation policy and SSR smoke checks (no browser executed)');
 if (process.argv.includes('--serve')) {

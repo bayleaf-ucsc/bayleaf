@@ -1,5 +1,19 @@
 # BayLeaf Sandboxes dashboard
 
+**Hosted OpenChamber retired in the 2026-11-28 revision (deployed 2026-11-28: API `74b94721`, Sandboxes `d3711627`, plugin `d4f8ae0`):**
+OpenCode Web is the only managed agent card. The API no longer defines the
+`openchamber` service, its `__browser` slot or reserved port 3100; legacy links
+fail closed at the gateway and `/services/openchamber/*` returns 400. The public
+ordinary-key `/sandbox/browser/{status,start,restart,stop}` routes, which drove
+only OpenChamber, are removed. Existing OpenChamber files and histories under
+`~/.local/share/bayleaf/browser` are not deleted, and no user sandbox is woken or
+modified by the rollout; a still-running OpenChamber process ends when its sandbox
+next sleeps. Rationale: the sandbox should feel like a small cloud workspace, not
+a second desktop. Desktop OpenChamber is the full experience, and lighter services
+launch faster and permit smaller sandboxes later. Shrinking the 2 GiB creation
+size is a separate, measured follow-up: OpenCode Web and code-server still declare
+2 GiB floors.
+
 **2026-10-24 hero simplification deployed:** Worker
 `ba7930bf-2a1b-43f2-8b38-ea7a1e648481`. Public-root readback confirmed the static
 illustration and OpenChamber-first guidance, with no hero connection controls.
@@ -16,21 +30,22 @@ cleanup without waking compute, and report pending cleanup separately. Detached
 jobs may survive; stopping one app does not stop sibling apps or the sandbox.
 
 The public home explains the shared workspace and available managed services.
-Signed-in owners can manage OpenChamber, code-server,
+Signed-in owners can manage OpenCode Web, code-server,
 JupyterLab, dufs and ttyd. They use the same sandbox files; all
 retain an owner-authenticated private gateway. A Desktop card (Daytona's noVNC,
 private, no VNC password; deployed 2026-10-24) is described in
 [`api/DESKTOP.md`](../api/DESKTOP.md). The hero's small desktop illustration is
 decorative only, signed in or out: no login, launch control, or live connection.
-OpenChamber is the primary graphical agent surface, both on desktop and in the
-sandbox, so working habits transfer between them. Desktop is an optional fallback
+OpenCode Web is the sandbox's agent surface; desktop OpenChamber runs the same
+OpenCode underneath, so project instructions and skills transfer when users take
+the desktop step. Desktop is an optional fallback
 for graphical computer-use tasks, launched deliberately
 from its card and opened in a separate tab. The page CSP permits no frames.
 The existing embed adapter/gateway capability remains available but is not used
 by this page.
 
-**OpenCode Web deployed 2026-11-23:** a second AI agent card, alongside
-OpenChamber. It shares project files and the BayLeaf allowance, but not agent
+**OpenCode Web deployed 2026-11-23:** initially a second AI agent card, alongside
+OpenChamber, and the only one since that retirement. It shares project files and the BayLeaf allowance, but not agent
 conversations or app settings. It uses the existing private gateway and managed
 setup/stop lifecycle. Current sizing and retention are documented in
 [`api/RETENTION.md`](../api/RETENTION.md).
@@ -43,10 +58,10 @@ setup/stop lifecycle. Current sizing and retention are documented in
 - `api/scripts/browser-setup.py` provides named per-app install, configure, launch,
   bootstrap and health functions, selected through `SERVICES`. Shared locks,
   atomic state, verified archive checks and process identities stay common.
-- `sandbox/services.ts` provides card copy, labels and errors. Only OpenChamber
-  has a measured progress estimate; other services show steps and elapsed time.
-- The owner controller retains legacy OpenChamber storage key `operation` and
-  uses `operation/<service>` for other apps. A central scheduler owns the single
+- `sandbox/services.ts` provides card copy, labels and errors. Services show
+  steps and elapsed time.
+- The owner controller stores each app under `operation/<service>`. The retired
+  OpenChamber record under the unnamed `operation` key is never read. A central scheduler owns the single
   Durable Object alarm, including independent link expiries and revocation retries.
   One setup may be opening per owner. Another service's start/restart returns
   `409 service_busy`, with no borrowed operation ID and no implicit queued job.

@@ -175,7 +175,7 @@ never published (`telemetry/qualification/rooms.md`).
 - **Skills, not tools:**
   - a desktop catalog skill `bayleaf-rooms` (`api/src/routes/docs.ts`)
     pointing at `/docs/rooms.md`;
-  - a hosted OpenChamber skill in `api/sandbox-plugin/skills/bayleaf-rooms`.
+  - a hosted OpenCode (Sandboxes) skill in `api/sandbox-plugin/skills/bayleaf-rooms`.
   - No MCP tools.
 - **API docs:** OpenAPI tag `Rooms`, `apiReference.ts`, `llms.ts`, and
   `landing/llms.txt` (auxiliary-domains line).

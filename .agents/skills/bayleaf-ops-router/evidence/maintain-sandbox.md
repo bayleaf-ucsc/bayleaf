@@ -3,6 +3,19 @@
 Dated record of past runs of [`maintain-sandbox.md`](../playbooks/maintain-sandbox.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-28: Retired hosted OpenChamber
+  from Sandboxes. Removed `SERVICE_DEFS.openchamber` (slot `__browser`, port
+  3100), its installer adapter (npm install, theme, Clef Flash classifier
+  seeding, OpenCode delegation), the ordinary-key `/sandbox/browser/{status,
+  start,restart,stop}` routes and public-preview framing by its origin. OpenCode
+  Web is the sole managed agent; desktop OpenChamber is unchanged. Existing
+  `~/.local/share/bayleaf/browser` data is preserved; no sandbox is woken. Deployed
+  API `74b94721`, then Sandboxes `d3711627`, with plugin `d4f8ae0` pinned.
+  Live: public page shows only the OpenCode Web agent card and the desktop
+  OpenChamber pointer; removed `/sandbox/browser/*` routes return 404; OpenAPI
+  and llms.txt no longer list them. Authenticated OpenCode Web launch on the new
+  pin is not yet re-qualified.
+
 - 2026-11-28 (#172): Enabled automatic 30-day v2 workspace retention after
   the zero-candidate scheduled dry run and synthetic deletion-safeguard tests.
   Verified both delete settings on Worker `b3605e0c` at 100%. First scheduled

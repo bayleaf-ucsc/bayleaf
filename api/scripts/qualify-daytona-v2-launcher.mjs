@@ -21,33 +21,18 @@ const oidc = randomBytes(32).toString('hex');
 const previewSecret = randomBytes(32);
 const installationKey = randomBytes(32).toString('hex');
 const daytonaKey = process.env.DAYTONA_API_KEY;
-const coldOpenChamber = process.argv.includes('--cold-openchamber');
-const openChamberProbe = `import importlib.util, pathlib, re, subprocess, time, uuid
+const coldOpenCodeWeb = process.argv.includes('--cold-opencode-web');
+const openCodeWebProbe = `import importlib.util, subprocess, time, uuid
 spec = importlib.util.spec_from_file_location('setup', '/home/daytona/workspace/setup-fixture.py')
 setup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(setup)
-setup.select_service('openchamber')
-(setup.ROOT / 'credentials').mkdir(parents=True)
-(setup.ROOT / 'credentials/owner-key').write_text('dtns_synthetic_package_fixture')
+setup.select_service('opencode-web')
+setup.ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
 operation = str(uuid.uuid4())
 setup.atomic('request.json', {'operation': operation, 'deadline': int(time.time()) + 360})
-original_command = setup.command
-def command_with_install_diagnostics(argv, timeout=30, env=None):
-    if argv[:3] != ['node', '--input-type=module', '-e']:
-        return original_command(argv, timeout, env)
-    result = subprocess.run(argv, env=env, text=True, capture_output=True, timeout=timeout)
-    if result.returncode:
-        lines = [line.strip() for line in result.stderr.splitlines()
-                 if 'Error:' in line or 'code:' in line]
-        diagnostic = re.sub(r'https?://\\S+', '[URL]', '; '.join(lines))[:300]
-        print('upstream installer diagnostic: ' + diagnostic)
-        raise setup.Failure('command_failed')
-setup.command = command_with_install_diagnostics
 try:
-    setup.install(setup.Progress(operation))
-    setup.ensure_opencode(operation)
-    subprocess.run([str(pathlib.Path.home() / '.opencode/bin/opencode'), '--version'],
-                   capture_output=True, check=True, timeout=20)
+    release = setup.install_opencode_web(setup.Progress(operation))
+    subprocess.run([str(release / 'bin/opencode'), '--version'], capture_output=True, check=True, timeout=20)
     print('cold-install-pass')
 except setup.Failure as error:
     print('cold-install-failure:' + str(error))
@@ -194,7 +179,7 @@ try {
   const download = await worker.fetch(api + filePath, { headers: { Authorization: `Bearer ${ownerKey}` } });
   assert.equal(download.status, 200, 'API v2 file download');
   assert.equal(await download.text(), 'v2-canary');
-  if (coldOpenChamber) {
+  if (coldOpenCodeWeb) {
     const upload = await worker.fetch(api + '/sandbox/files/home/daytona/workspace/setup-fixture.py', {
       method: 'PUT', headers: { Authorization: `Bearer ${ownerKey}`, 'Content-Type': 'application/octet-stream' },
       body: await readFile(root + 'scripts/browser-setup.py'),
@@ -206,13 +191,13 @@ try {
     const install = await fetch(`${proxy.origin}/toolbox/${encodeURIComponent(status.id)}/processes?waitMs=330000&logs=text`, {
       method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(345_000),
       headers: { Authorization: `Bearer ${daytonaKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ argv: ['python3', '-c', openChamberProbe], timeoutMs: 320_000 }),
+      body: JSON.stringify({ argv: ['python3', '-c', openCodeWebProbe], timeoutMs: 320_000 }),
     });
-    assert.equal(install.status, 201, 'OpenChamber install process');
+    assert.equal(install.status, 201, 'OpenCode Web install process');
     const result = await install.json();
     const report = result.logs?.frames?.filter(f => f.channel === 'stdout').map(f => f.data).join('').trim();
-    assert.equal(report, 'cold-install-pass', `OpenChamber package qualification: ${report ?? 'no report'}`);
-    console.log('OpenChamber and its managed OpenCode cold install passed on the agreed shape.');
+    assert.equal(report, 'cold-install-pass', `OpenCode Web package qualification: ${report ?? 'no report'}`);
+    console.log('OpenCode Web pinned, integrity-verified cold install passed on the agreed shape.');
   }
   const controller = (action, method = 'GET') => worker.fetch(`https://controller.invalid/${action}?service=desktop`, { method });
   assert.equal((await controller('start', 'POST')).status, 202);

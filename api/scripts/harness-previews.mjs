@@ -883,13 +883,19 @@ try {
     }, body: '{"port":5000}' });
     assert.equal(stopped.status, 409); sandboxState = 'running';
   });
-  await check('keyed exposure supports explicit public access but reserves the browser port', async () => {
+  await check('keyed exposure supports explicit public access but reserves managed app and relay ports', async () => {
     const headers={Authorization:'Bearer sk-bayleaf-owner','Content-Type':'application/json'};
     const exposed=await dispatch(api+'/sandbox/expose',{method:'POST',headers,body:JSON.stringify({port:5001,access:'public'})});
     assert.equal(exposed.status,200);
     assert.equal((await dispatch((await exposed.json()).url)).status,200);
-    const reserved=await dispatch(api+'/sandbox/expose',{method:'POST',headers,body:JSON.stringify({port:3100,access:'public'})});
-    assert.equal(reserved.status,400);
+    for (const port of [8795, 8785]) {
+      const reserved=await dispatch(api+'/sandbox/expose',{method:'POST',headers,body:JSON.stringify({port,access:'public'})});
+      assert.equal(reserved.status,400,`OpenCode Web port ${port} is reserved`);
+    }
+    // Retired OpenChamber's port is an ordinary user port again.
+    const released=await dispatch(api+'/sandbox/expose',{method:'POST',headers,body:JSON.stringify({port:3100})});
+    assert.equal(released.status,200);
+    await dispatch(api+'/sandbox/expose/3100',{method:'DELETE',headers});
     const desktop=await dispatch(api+'/sandbox/expose',{method:'POST',headers,body:JSON.stringify({port:6080,access:'public'})});
     assert.equal(desktop.status,400,'unauthenticated noVNC port is reserved from keyed exposure');
     await dispatch(api+'/sandbox/expose/5001',{method:'DELETE',headers});

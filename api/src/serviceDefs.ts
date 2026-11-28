@@ -16,14 +16,6 @@ export const SERVICE_DEFS = {
     steps: [...COMMON_STEPS, 'installing_jupyter', 'starting_jupyter'],
     errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid', 'python_311_required', 'managed_file_changed'],
   },
-  openchamber: {
-    id: 'openchamber', root: '/home/daytona/.local/share/bayleaf/browser', port: 3100,
-    slot: '__browser', credential: true, memoryGiB: 2, driver: 'installer',
-    steps: [...COMMON_STEPS, 'installing_openchamber', 'installing_opencode', 'starting_openchamber',
-      'waiting_for_opencode', 'connecting_bayleaf', 'loading_tools'],
-    errors: [...COMMON_ERRORS, 'node_22_required', 'credential_missing', 'credential_invalid',
-      'provider_configuration_unavailable', 'opencode_installation_failed'],
-  },
   'opencode-web': {
     id: 'opencode-web', root: '/home/daytona/.local/share/bayleaf/opencode-web', port: 8795, relayPort: 8785,
     slot: '__opencode-web', credential: true, memoryGiB: 2, driver: 'installer',

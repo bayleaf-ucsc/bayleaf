@@ -73,10 +73,9 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(env['XDG_DATA_HOME'], str(self.root / 'data'))
             self.assertEqual(env['BAYLEAF_OPENCODE_URL'], 'http://127.0.0.1:8795')
             self.assertTrue((home / 'workspace').is_dir())
-            self.assertFalse((self.root / 'openchamber').exists())
             with patch.object(m, 'bootstrap') as bootstrap:
                 m.bootstrap_opencode_web(None, 'test', None)
-                bootstrap.assert_called_once_with(8795, 'test', report=None, password=secret)
+                bootstrap.assert_called_once_with(8795, 'test', secret, report=None)
             (self.root / 'credentials/app-secret').write_text('b' * 64)
             self.assertNotEqual(m.configure_opencode_web(), fingerprint)
             (self.root / 'credentials/app-secret').write_text(secret)
@@ -109,7 +108,7 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(probe.method, 'OPTIONS')
             self.assertEqual(probe.get_header('Origin'), origin)
 
-    def test_openchamber_shared_mcp_config_and_owner_conflict(self):
+    def test_agent_shared_mcp_config_and_owner_conflict(self):
         home = self.root/'home'
         executable = home/'.local/share/bayleaf/cli/bayleaf.mjs'
         executable.parent.mkdir(parents=True)
@@ -119,13 +118,13 @@ class InstallerTests(unittest.TestCase):
         (self.root/'credentials/owner-key').write_text('dtn_secret_synthetic')
         with patch.object(m.Path, 'home', return_value=home), patch.object(m.shutil, 'which', return_value='/node/bin/node'), patch.dict(m.os.environ,
                 {'HTTPS_PROXY':'http://proxy.test:8080','NODE_EXTRA_CA_CERTS':'/ca.pem','NODE_OPTIONS':'--inspect','UNRELATED_SECRET':'secret'}, clear=True):
-            first = m.configure()
+            first = m.configure_agent()
             config = m.read('config/opencode/opencode.json')
             server = config['mcp']['servers']['sandbox']
             self.assertEqual(server['command'], ['/node/bin/node',str(executable),'mcp','--groups','computer,previews'])
             self.assertFalse(server['codemode'])
             self.assertEqual(server['environment'], {'HTTPS_PROXY':'http://proxy.test:8080','NODE_EXTRA_CA_CERTS':'/ca.pem'})
-            self.assertEqual(first, m.configure())
+            self.assertEqual(first, m.configure_agent())
             self.assertEqual(m.service_environment()['BAYLEAF_SHARED_MCP'], 'true')
             self.assertNotIn('dtn_secret', json.dumps(config))
             self.assertIn({'action':'sandbox_*','resource':'*','effect':'ask'}, config['permissions'])
@@ -133,7 +132,7 @@ class InstallerTests(unittest.TestCase):
             config['mcp']['servers']['sandbox']['command'] = ['owner-command']
             m.atomic('config/opencode/opencode.json', config)
             with self.assertRaisesRegex(m.Failure,'managed_file_changed'):
-                m.configure()
+                m.configure_agent()
             self.assertEqual(m.read('config/opencode/opencode.json'), config)
 
     def test_cli_path_falls_back_only_to_owned_safe_node_directory(self):
@@ -182,41 +181,54 @@ class InstallerTests(unittest.TestCase):
         m.atomic('request.json', {'rooms_enabled': 'true'})
         self.assertEqual(m.service_environment()['BAYLEAF_ROOMS_ENABLED'], 'false')
 
-    def test_openchamber_launch_and_fingerprint_use_server_rooms_flag(self):
+    def opencode_web_request(self, **flags):
+        m.atomic('request.json', {'preview_origin': 'https://owner-private-' + 'a' * 24 + '.bayleaf-proxies.dev', **flags})
+
+    def opencode_web_credentials(self):
         (self.root/'credentials').mkdir()
         (self.root/'credentials/owner-key').write_text('dtn_secret_synthetic')
+        (self.root/'credentials/app-secret').write_text('a' * 64)
+
+    def test_opencode_web_launch_and_fingerprint_use_server_rooms_flag(self):
+        self.opencode_web_credentials()
         with patch.object(m.Path, 'home', return_value=self.root/'home'), patch.dict(m.os.environ,
                 {'BAYLEAF_ROOMS_ENABLED': 'true'}):
-            m.atomic('request.json', {'inboxes_enabled': True})
-            before = m.configure()
-            _, env = m.start_openchamber(43210)
+            self.opencode_web_request(inboxes_enabled=True)
+            before = m.configure_opencode_web()
+            _, env = m.start_opencode_web(None)
             self.assertEqual(env['BAYLEAF_ROOMS_ENABLED'], 'false')
-            m.atomic('request.json', {'inboxes_enabled': True, 'rooms_enabled': False})
-            self.assertEqual(m.configure(), before, 'rooms off leaves earlier fingerprints unchanged')
-            m.atomic('request.json', {'inboxes_enabled': True, 'rooms_enabled': True})
-            after = m.configure()
+            self.opencode_web_request(inboxes_enabled=True, rooms_enabled=False)
+            self.assertEqual(m.configure_opencode_web(), before, 'rooms off leaves earlier fingerprints unchanged')
+            self.opencode_web_request(inboxes_enabled=True, rooms_enabled=True)
+            after = m.configure_opencode_web()
             self.assertNotEqual(before, after)
-            _, env = m.start_openchamber(43210)
+            _, env = m.start_opencode_web(None)
             self.assertEqual(env['BAYLEAF_ROOMS_ENABLED'], 'true')
 
-    def test_openchamber_launch_and_fingerprint_use_server_inboxes_flag(self):
-        (self.root/'credentials').mkdir()
-        (self.root/'credentials/owner-key').write_text('dtn_secret_synthetic')
+    def test_opencode_web_launch_and_fingerprint_use_server_inboxes_flag(self):
+        self.opencode_web_credentials()
         with patch.object(m.Path, 'home', return_value=self.root/'home'), patch.dict(m.os.environ,
                 {'BAYLEAF_INBOXES_ENABLED': 'true'}):
-            before = m.configure()
-            _, env = m.start_openchamber(43210)
+            self.opencode_web_request()
+            before = m.configure_opencode_web()
+            _, env = m.start_opencode_web(None)
             self.assertEqual(env['BAYLEAF_INBOXES_ENABLED'], 'false')
-            m.atomic('request.json', {'inboxes_enabled': True})
-            after = m.configure()
+            self.opencode_web_request(inboxes_enabled=True)
+            after = m.configure_opencode_web()
             self.assertNotEqual(before, after)
-            _, env = m.start_openchamber(43210)
+            _, env = m.start_opencode_web(None)
             self.assertEqual(env['BAYLEAF_INBOXES_ENABLED'], 'true')
+
+    def test_openchamber_is_retired_and_service_selection_is_required(self):
+        self.assertNotIn('openchamber', m.SERVICES)
+        for argv in (['setup.py', 'inspect'], ['setup.py', '--service', 'openchamber', 'inspect']):
+            with self.subTest(argv=argv), patch.object(m.sys, 'argv', argv), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                m.main()
 
     def code_server(self):
         m.select_service('code-server')
         m.ROOT = self.root
-        self.addCleanup(m.select_service, 'openchamber')
 
     def test_code_server_receives_placeholder_but_not_inherited_keys(self):
         self.code_server()
@@ -233,15 +245,14 @@ class InstallerTests(unittest.TestCase):
         self.assertNotIn('--disable-workspace-trust', argv)
         self.assertEqual(env['BAYLEAF_API_KEY'], 'dtn_secret_synthetic')
         self.assertNotIn('OPENROUTER_API_KEY', env)
-        with patch.object(m, 'ensure_opencode', side_effect=AssertionError('OpenCode requested')):
-            m.adapter('prepare', 'test', self.progress)
+        m.adapter('prepare', 'test', self.progress)
         self.assertEqual(m.inspect()['service'], 'code-server')
         self.assertEqual(m.inspect()['port'], 8791)
 
-    def test_code_server_health_is_not_openchamber_health(self):
+    def test_code_server_health_is_not_opencode_web_health(self):
         self.code_server()
         self.assertTrue(m.adapter('health', {'status':'alive'}))
-        for data in ({'status':'dead'}, {'openchamberVersion':'3.0','isOpenCodeReady':True}, []):
+        for data in ({'status':'dead'}, {'version':m.OPENCODE_WEB_VERSION}, []):
             self.assertFalse(m.adapter('health', data))
 
     def test_code_server_quiet_defaults_seed_only_missing_settings(self):
@@ -341,7 +352,7 @@ class InstallerTests(unittest.TestCase):
                             m.verified_archive('coder/code-server',m.code_server_asset,stage)
 
     def test_dufs_uses_common_verified_install_without_editor_resource_floor(self):
-        m.select_service('dufs');m.ROOT=self.root;self.addCleanup(m.select_service,'openchamber')
+        m.select_service('dufs');m.ROOT=self.root
         data=io.BytesIO()
         with tarfile.open(fileobj=data,mode='w:gz') as tar:
             member=tarfile.TarInfo('dufs');member.size=2;member.mode=0o755
@@ -389,16 +400,18 @@ class InstallerTests(unittest.TestCase):
                 m.setup('test')
         kill.assert_not_called();killpg.assert_not_called();spawn.assert_not_called()
 
-    def test_readiness_accepts_new_openchamber_versions_but_requires_ready_backend(self):
-        with patch.object(m,'read',return_value={'release':m.RELEASE,'configured':True,'process':{}}), \
-             patch.object(m,'alive',return_value=True):
-            for ready in [True,False]:
-                response=Mock();response.__enter__=Mock(return_value=response);response.__exit__=Mock(return_value=False)
-                response.read.return_value=json.dumps({'openchamberVersion':'2.1.1','isOpenCodeReady':ready}).encode()
-                with patch.object(m.urllib.request,'build_opener',return_value=Mock(open=Mock(return_value=response))):
-                    self.assertEqual(m.health(),ready)
+    def test_opencode_web_readiness_requires_the_pinned_version(self):
+        self.assertTrue(m.health_opencode_web({'version':m.OPENCODE_WEB_VERSION}))
+        for data in ({'version':'0.0.0'}, {'healthy':True}, {}, [], None):
+            self.assertFalse(m.health_opencode_web(data))
 
     def setUp(self):
+        # No default service exists: select one per test and restore the unset globals.
+        saved = (m.SERVICE, m.RELEASE, m.PORT, m.ROOT)
+        def restore():
+            m.SERVICE, m.RELEASE, m.PORT, m.ROOT = saved
+        self.addCleanup(restore)
+        m.select_service('opencode-web')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
@@ -415,14 +428,14 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(list(self.root.glob('state/*.tmp')), [])
 
     def test_progress_preserves_fast_steps_and_inspect_merges_supervisor_steps(self):
-        self.progress.update('installing',step='installing_openchamber')
-        self.progress.update('configuring',step='installing_opencode')
+        self.progress.update('installing',step='installing_opencode')
+        self.progress.update('starting',step='starting_opencode_web')
         m.atomic('state/runtime.json',{'operation':'test','timeline':[
             {'step':'connecting_bayleaf','at':int(m.time.time())}]})
         with patch.object(m,'health',return_value=False),patch.object(m,'alive',return_value=False):
             result=m.inspect()
         self.assertEqual([e['step'] for e in result['timeline']],
-            ['installing_openchamber','installing_opencode','connecting_bayleaf'])
+            ['installing_opencode','starting_opencode_web','connecting_bayleaf'])
         self.assertEqual(result['progress'],'connecting_bayleaf')
         self.assertIn('started_at',result)
         m.atomic('state/runtime.json',{'operation':'old','timeline':[
@@ -455,7 +468,7 @@ class InstallerTests(unittest.TestCase):
         child = Mock()
         req = {'credential_hash': 'synthetic', 'deadline': int(m.time.time()) + 300}
         with patch.object(m, 'request', return_value=req), patch.object(m, 'check_browser_port'), \
-             patch.object(m, 'environment', return_value={}), patch.object(m, 'bootstrap'), \
+             patch.object(m, 'start_opencode_web', return_value=(['opencode'], {})), patch.object(m, 'bootstrap_opencode_web'), \
              patch.object(m, 'atomic'), patch.object(m, 'identity', return_value={'pid':123}), \
              patch.object(m, 'read', side_effect=AssertionError('runtime consulted an expiry lease')), \
              patch.object(m.subprocess, 'Popen', return_value=child), patch.object(m, 'terminate') as terminate, \
@@ -466,48 +479,16 @@ class InstallerTests(unittest.TestCase):
         child.wait.assert_called_once_with(timeout=15)
         terminate.assert_called_once_with({'pid':123})  # Final cleanup after process exit.
 
-    def test_failed_install_preserves_current_then_retry_is_idempotent(self):
-        user = self.root/'unrelated-config.json'
-        user.write_text('keep me')
-        old = self.root/'releases/old'
-        old.mkdir(parents=True)
-        (self.root/'current').symlink_to(old)
-        def npm(argv, **kwargs):
-            if argv[0] == 'npm':
-                self.assertIn('--global',argv)
-                self.assertEqual(argv[-1],'@openchamber/web@latest')
-                stage = Path(argv[argv.index('--prefix')+1])/'bin'
-                stage.mkdir(parents=True)
-                for name in ['openchamber']:
-                    (stage/name).write_text('synthetic binary')
-        with patch.object(m.shutil,'which',return_value='/bin/synthetic'), \
-             patch.object(m.subprocess,'check_output',return_value='v25.9.0'), \
-             patch.object(m.shutil,'disk_usage',return_value=Mock(free=10*1024**3)):
-            with patch.object(m,'command',side_effect=m.Failure('command_timeout')):
-                with self.assertRaisesRegex(m.Failure,'installation_failed'):
-                    m.install(self.progress)
-            self.assertEqual((self.root/'current').resolve(),old)
-            self.assertFalse((self.root/'state/installation.json').exists())
-            with patch.object(m,'command',side_effect=npm):
-                release = m.install(self.progress)
-            self.assertEqual((self.root/'current').resolve(),release)
-            with patch.object(m,'command',side_effect=AssertionError('reinstalled')):
-                self.assertEqual(m.install(self.progress),release)
-        self.assertEqual(user.read_text(),'keep me')
-        self.assertTrue(old.exists())
-
-    def test_configuration_refresh_preserves_user_application_settings(self):
+    def test_configuration_refresh_preserves_user_agent_settings(self):
         (self.root/'credentials').mkdir()
         (self.root/'credentials/incoming').write_text('dtn_secret_synthetic')
-        m.atomic('openchamber/settings.json', {'projects':[{'path':'/my/work'}], 'custom':True})
         m.atomic('config/opencode/opencode.json', {'model':'personal/test',
             'providers':{'personal':{'name':'Keep'}},
             'shell':'/bin/custom'})
         with patch.object(m.urllib.request,'urlopen',side_effect=AssertionError('snapshot downloaded')), \
              patch.object(m.Path,'home',return_value=self.root/'home'):
-            m.configure()
+            m.configure_agent()
         self.assertTrue((self.root/'home/workspace').is_dir())
-        self.assertTrue(m.read('openchamber/settings.json')['custom'])
         self.assertEqual((self.root/'credentials/owner-key').stat().st_mode & 0o777,0o600)
         self.assertNotIn('sk-bayleaf', (self.root/'config/opencode/opencode.json').read_text())
         config=m.read('config/opencode/opencode.json')
@@ -517,65 +498,8 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('-opencode.tool.webfetch',config['plugins'])
         self.assertNotIn('update',config)
 
-    def configure_with(self, placeholder):
-        (self.root/'credentials').mkdir(exist_ok=True)
-        (self.root/'credentials/incoming').write_text(placeholder)
-        with patch.object(m.Path,'home',return_value=self.root/'home'):
-            return m.configure()
-
-    def test_fresh_openchamber_selects_bayleaf_classifier_idempotently(self):
-        first = self.configure_with('dtn_secret_one')
-        endpoint = {'version':1,'endpoint':{**m.CLASSIFIER,'key':'dtn_secret_one'}}
-        self.assertEqual(m.read('openchamber/classification.json'), {'version':1,'source':'custom'})
-        self.assertEqual(m.read('openchamber/classifier-endpoint.json'), endpoint)
-        self.assertEqual((self.root/'openchamber/classifier-endpoint.json').stat().st_mode & 0o777, 0o600)
-        self.assertNotIn('dtn_secret', (self.root/'config/opencode/opencode.json').read_text())
-        self.assertEqual(self.configure_with('dtn_secret_one'), first)
-        self.assertEqual(m.read('openchamber/classifier-endpoint.json'), endpoint)
-
-    def test_classifier_choices_survive_and_only_our_placeholder_follows_rotation(self):
-        self.configure_with('dtn_secret_one')
-        m.atomic('openchamber/classification.json', {'version':1,'source':'off'})
-        self.configure_with('dtn_secret_two')
-        self.assertEqual(m.read('openchamber/classification.json')['source'], 'off')
-        self.assertEqual(m.read('openchamber/classifier-endpoint.json')['endpoint']['key'], 'dtn_secret_two')
-        owner = {'version':1,'endpoint':{**m.CLASSIFIER,'key':'sk-bayleaf-typed-by-owner'}}
-        m.atomic('openchamber/classifier-endpoint.json', owner)
-        self.configure_with('dtn_secret_three')
-        self.assertEqual(m.read('openchamber/classifier-endpoint.json'), owner)
-
-    def test_owner_endpoint_without_saved_source_is_not_replaced(self):
-        custom = {'version':1,'endpoint':{'url':'https://decide.example/v1','model':'mine'}}
-        m.atomic('openchamber/classifier-endpoint.json', custom)
-        self.configure_with('dtn_secret_one')
-        self.assertEqual(m.read('openchamber/classifier-endpoint.json'), custom)
-        self.assertIsNone(m.read('openchamber/classification.json'))
-        (self.root/'openchamber/classifier-endpoint.json').write_text('{corrupt')
-        self.configure_with('dtn_secret_one')
-        self.assertEqual((self.root/'openchamber/classifier-endpoint.json').read_text(), '{corrupt')
-
-    def test_first_opencode_install_delegates_to_openchamber_and_reuses_binary(self):
-        home=self.root/'home'
-        with patch.object(m.Path,'home',return_value=home), patch.object(m,'request'), \
-             patch.object(m,'environment',return_value={}), patch.object(m,'command') as command:
-            for layout in ('build/server', 'server'):
-                with self.subTest(layout=layout):
-                    module = self.root/'releases'/m.RELEASE/'lib/node_modules/@openchamber/web'/layout/'lib/opencode/v2-install.js'
-                    module.parent.mkdir(parents=True)
-                    module.touch()
-                    m.ensure_opencode('test')
-                    argv=command.call_args.args[0]
-                    self.assertEqual(argv[:3],['node','--input-type=module','-e'])
-                    self.assertIn(module.as_uri(),argv[3])
-                    self.assertIn('await installOpenCodeV2()',argv[3])
-                    self.assertEqual(command.call_args.kwargs['env']['SHELL'], '/bin/bash')
-                    module.unlink()
-            binary=home/'.opencode/bin/opencode'
-            binary.parent.mkdir(parents=True);binary.write_text('synthetic');binary.chmod(0o700)
-            command.reset_mock();m.ensure_opencode('test');command.assert_not_called()
-
     def test_bootstrap_is_idempotent_and_keeps_credentials_out_of_requests_argv(self):
-        m.atomic('credentials/opencode-password.json','synthetic-password')
+        (self.root/'credentials').mkdir()
         (self.root/'credentials/owner-key').write_text('sk-bayleaf-synthetic')
         calls=[]
         def response(req, **kwargs):
@@ -587,28 +511,25 @@ class InstallerTests(unittest.TestCase):
             handle=Mock();handle.__enter__=Mock(return_value=handle);handle.__exit__=Mock(return_value=False)
             handle.read.return_value=json.dumps(result).encode();return handle
         with patch.object(m,'request'), patch.object(m.urllib.request,'build_opener',return_value=Mock(open=response)):
-            m.bootstrap(45678,'test')
+            m.bootstrap(45678,'test','synthetic-password')
         self.assertEqual([req.get_method() for req in calls],['GET','GET','POST','GET'])
         self.assertEqual(json.loads(calls[2].data),{'url':'https://api.bayleaf.dev/sandbox'})
         self.assertTrue(all('sk-bayleaf' not in req.full_url for req in calls))
+        self.assertTrue(all(req.get_header('Authorization') == m.opencode_basic('synthetic-password') for req in calls))
         self.assertTrue(all(req.get_header('X-opencode-directory') == str(m.Path.home() / 'workspace')
             for req in calls), 'bootstrap must verify the browser project, not the server default')
 
     def test_managed_environment_cannot_attach_to_an_unrelated_backend(self):
         (self.root/'credentials').mkdir()
-        (self.root/'credentials/owner-key').write_text('sk-bayleaf-synthetic')
+        (self.root/'credentials/owner-key').write_text('dtn_secret_synthetic')
         with patch.dict(m.os.environ,{'OPENCODE_HOST':'https://unrelated.example',
             'OPENCODE_SKIP_START':'true','OPENCHAMBER_SKIP_OPENCODE_START':'true',
             'OPENCODE_BINARY':'/unrelated/opencode'}):
-            env=m.environment(45678)
-        self.assertNotIn('OPENCODE_HOST',env)
-        self.assertNotIn('OPENCODE_SKIP_START',env)
-        self.assertNotIn('OPENCODE_BINARY',env)
-        self.assertEqual(env['npm_config_prefix'],str(self.root/'releases'/m.RELEASE))
-        self.assertEqual(env['BAYLEAF_OPENCODE_URL'],'http://127.0.0.1:45678')
-        self.assertEqual(env['OPENCHAMBER_OPENCODE_HOSTNAME'],'127.0.0.1')
-        self.assertEqual(env['OPENCODE_PORT'],'45678')
-        self.assertEqual((self.root/'credentials/opencode-password.json').stat().st_mode & 0o777,0o600)
+            env=m.agent_environment()
+        for name in ('OPENCODE_HOST','OPENCODE_SKIP_START','OPENCHAMBER_SKIP_OPENCODE_START','OPENCODE_BINARY'):
+            self.assertNotIn(name,env)
+        self.assertEqual(env['XDG_CONFIG_HOME'],str(self.root/'config'))
+        self.assertEqual(env['BAYLEAF_API_KEY'],'dtn_secret_synthetic')
 
     def test_pid_reuse_never_signals_an_unrelated_process(self):
         original = {'pid':123,'start':'100','boot':'old'}
@@ -630,7 +551,7 @@ class InstallerTests(unittest.TestCase):
         calls=[]
         child=Mock();child.wait.side_effect=lambda **kw:calls.append('reap')
         with patch.object(m,'request',return_value={'credential_hash':'test'}),patch.object(m,'check_browser_port'), \
-             patch.object(m,'environment',return_value={}),patch.object(m,'bootstrap'),patch.object(m,'atomic'), \
+             patch.object(m,'start_opencode_web',return_value=(['opencode'],{})),patch.object(m,'bootstrap_opencode_web'),patch.object(m,'atomic'), \
              patch.object(m,'identity',return_value={'pid':123}),patch.object(m.subprocess,'Popen',return_value=child), \
              patch.object(m,'wait_for_exit',side_effect=lambda child:calls.append('exit-without-reaping')), \
              patch.object(m,'terminate',side_effect=lambda marker:calls.append('cleanup-group')):
@@ -641,7 +562,7 @@ class InstallerTests(unittest.TestCase):
         m.atomic('state/runtime.json', {'process':{'pid':123}, 'release':m.RELEASE, 'credential_hash':'same'})
         req={'operation':'test', 'deadline':int(m.time.time())+300}
         with patch.object(m, 'request', return_value=req), patch.object(m, 'Progress'), \
-             patch.object(m, 'install'), patch.object(m, 'ensure_opencode'), patch.object(m, 'configure', return_value='same'), \
+             patch.object(m, 'install_opencode_web'), patch.object(m, 'configure_opencode_web', return_value='same'), \
              patch.object(m, 'alive', return_value=True), patch.object(m, 'health', side_effect=[False,False,True]), \
              patch.object(m.time, 'sleep'), patch.object(m, 'terminate') as stop, \
              patch.object(m, 'check_browser_port') as check, patch.object(m.subprocess, 'Popen') as spawn:

@@ -7,8 +7,8 @@ body:
       value: |
         Thanks for taking the time to file an issue about [BayLeaf Sandboxes](https://sandbox.bayleaf.dev)!
 
-        This covers your sandbox workspace, managed services (OpenChamber, code-server,
-        Files, Shell), sign-in, data retention and privacy questions, proposals for new
+        This covers your sandbox workspace, managed services (OpenCode Web, code-server,
+        JupyterLab, Files, Shell, Desktop), sign-in, data retention and privacy questions, proposals for new
         managed services, and anything else related to the sandbox experience. Bug
         reports, feature requests, and clarifying questions are all welcome.
 

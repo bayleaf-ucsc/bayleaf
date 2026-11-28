@@ -70,7 +70,7 @@ try {
   for(const name of ['bayleaf_expose','bayleaf_unexpose','bayleaf_inboxes','bayleaf_inbox_read'])assert(!inventory.tools.some(t=>t.id===name));
   for(const name of ['bayleaf_usage','bayleaf_whoami','bayleaf_directory','bayleaf_inbox_save','bayleaf_inbox_delete_message','bayleaf_inbox_destroy','webfetch'])assert(inventory.tools.some(t=>t.id===name));
   const skills=inventory.skills.data??inventory.skills;
-  assert(skills.some(s=>s.id==='bayleaf-scheduling'));
+  assert(!skills.some(s=>s.id==='bayleaf-scheduling'),'retired with hosted OpenChamber');
   assert(skills.some(s=>s.name==='bayleaf-sandbox-orientation'));
   assert(!skills.some(s=>['bayleaf-sandboxes','bayleaf-inboxes'].includes(s.id)));
   console.log('PASS shared tool/skill inventory and duplicate suppression');
@@ -90,7 +90,7 @@ try {
   await api(`/api/session/${sessionID}/permission/${approval.id}/reply`,{decision:'once'});
   await pending;
   assert(!logs.includes('dtn_secret_fixture'));
-  console.log(`PASS OpenCode ${inventory.version}: 28 shared tools, retained native extras, one orientation + scheduling, native image conversion and click approval; AX discovery structure only`);
+  console.log(`PASS OpenCode ${inventory.version}: 28 shared tools, retained native extras, one orientation, no scheduling skill, native image conversion and click approval; AX discovery structure only`);
 } catch(error) {
   console.error(logs.replaceAll('dtn_secret_fixture','[redacted]').slice(-4000));
   throw error;

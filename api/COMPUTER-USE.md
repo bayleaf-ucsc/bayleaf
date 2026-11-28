@@ -134,7 +134,8 @@ All are POST beneath `/sandbox/computer`:
 Approved follow-up (2026-10-24): [`sandbox-cli/README.md`](sandbox-cli/README.md)
 records shipped sandbox-only CLI/MCP wiring, Adam-only managed app refresh and
 the updated exposure matrix. OpenChamber uses a published duplicate-suppression
-plugin switch. The Nanobot portion of that release is historical: that managed
+plugin switch (hosted OpenChamber was retired in the 2026-11-28 revision; hosted
+OpenCode Web uses the same switch). The Nanobot portion of that release is historical: that managed
 surface was retired on 2026-11-04.
 Live registry/read-only checks pass. Desktop was inactive during this release,
 so live screenshots/input and browser image rendering remain unqualified.

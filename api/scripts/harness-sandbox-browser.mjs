@@ -42,9 +42,16 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
     async fetch(req) {
       clock=Number(req.headers.get('X-Test-Clock')||clock);
       const path=new URL(req.url).pathname;
-      const service=new URL(req.url).searchParams.get('service')||'openchamber';
-      const key=service==='openchamber'?'operation':'operation/'+service;
+      const service=new URL(req.url).searchParams.get('service')||'opencode-web';
+      const key='operation/'+service;
        if(path==='/__record')return Response.json(await this.testStorage.get(key));
+       if(path==='/__legacy-operation') {
+         // Retired OpenChamber stored its record under the unnamed key.
+         const legacy={email:req.headers.get('X-BayLeaf-Owner'),operation:'legacy-openchamber',phase:'opening',
+           step:'inspect',progress:'loading_tools',nextAt:0,deadline:9999999999,setupDeadline:9999999999};
+         await this.testStorage.put('operation',legacy);return Response.json(legacy);
+       }
+       if(path==='/__legacy-record')return Response.json(await this.testStorage.get('operation')??null);
        if(path==='/__registration-crash') {
          const op=await this.testStorage.get(key);op.phase='opening';op.step='register';op.nextAt=Date.now();delete op.url;
          await this.testStorage.put(key,op);await this.arm();return Response.json(op);
@@ -109,22 +116,21 @@ async function guestCommand(command) {
     const operation = command.match(/--operation ([a-f0-9-]+)/)[1];
     return processResult(JSON.stringify({ stopped: !stopFails, operation }), stopFails ? 1 : 0);
   }
-  if (command.endsWith('setup.py inspect')) return processResult(JSON.stringify({
-    schema: 1, operation: interrupted ? 'stale' : incomingOperation.operation,
-    updated_at: Math.floor(Date.now() / 1000), phase: 'ready', ready: true, port: 3100,
-    timeline: [{ step: 'loading_tools', at: Math.floor(Date.now() / 1000) },
-      { step: 'credential-leak', at: Math.floor(Date.now() / 1000), error: 'secret' },
-      { step: 'connecting_bayleaf', at: 9999999999999 }],
-  }));
+  // The controller always names the service; an unnamed inspect is never issued.
+  assert(!command.endsWith('setup.py inspect'), 'inspect without --service');
   const appService = ['code-server', 'dufs', 'jupyter', 'ttyd', 'opencode-web'].find(id => command.endsWith('--service ' + id + ' inspect'));
+  const at = Math.floor(Date.now() / 1000);
   if (appService) return processResult(JSON.stringify({
-    schema: 1, service: wrongService ? 'openchamber' : appService, operation: incomingOperation.operation,
-    updated_at: Math.floor(Date.now() / 1000), phase: 'ready', ready: true,
+    // A retired installer reporting readiness must never satisfy another service.
+    schema: 1, service: wrongService ? 'openchamber' : appService, operation: interrupted ? 'stale' : incomingOperation.operation,
+    updated_at: at, phase: 'ready', ready: true,
     ...(appService === 'opencode-web' ? {
       preview_origin: wrongOpencodeOrigin ? 'https://stale.example.test' : incomingOperation.preview_origin,
     } : {}),
     port: { dufs: 8790, jupyter: 8793, ttyd: 8794, 'opencode-web': 8795 }[appService] ?? 8791,
-    timeline: [{ step: appService === 'dufs' ? 'installing_dufs' : 'installing_code_server', at: Math.floor(Date.now() / 1000) }],
+    timeline: appService === 'opencode-web' ? [{ step: 'loading_tools', at },
+      { step: 'credential-leak', at, error: 'secret' }, { step: 'connecting_bayleaf', at: 9999999999999 }]
+      : [{ step: appService === 'dufs' ? 'installing_dufs' : 'installing_code_server', at }],
   }));
   return processResult('');
 }
@@ -278,8 +284,12 @@ async function req(path, options = {}) {
   if (options.method === 'POST') headers.set('X-BayLeaf-Action','sandbox-browser');
   return worker.fetch(api+path, { method:options.method || 'GET', headers });
 }
-const action = name => req('/sandbox/browser/'+name,{method:'POST'});
-const status = async () => (await req('/sandbox/browser/status')).json();
+// Managed-app lifecycle reaches the controller only with an explicit service
+// (the sandbox.bayleaf.dev RPC). OpenCode Web is the primary lifecycle subject.
+const PRIMARY = 'opencode-web';
+const primary = (name, options) => req('/__test/'+name+'?service='+PRIMARY, options);
+const action = name => primary(name,{method:'POST'});
+const status = async () => (await primary('status')).json();
 const tick = async () => (await req('/__test/__tick')).json();
 const finish = async () => {
   let op;
@@ -319,11 +329,33 @@ try {
     assert.equal(creates+wakes+executions,0);
   });
 
-  await check('anonymous, CSRF, Campus Pass, bad keys and disabled feature fail closed',async()=>{
-    assert.equal((await req('/sandbox/browser/start',{method:'POST',owner:false})).status,401);
-    assert.equal((await req('/sandbox/browser/start',{method:'POST',origin:false})).status,403);
-    assert.equal((await req('/sandbox/browser/start',{method:'POST',headers:{Authorization:'Bearer invalid'}})).status,401);
-    assert.equal((await req('/sandbox/browser/status',{headers:{'X-Test-Disabled':'1'}})).status,503);
+  await check('retired service-less /sandbox/browser lifecycle routes are gone; the controller requires a service',async()=>{
+    for(const [method,name] of [['GET','status'],['POST','start'],['POST','restart'],['POST','stop'],['POST','continue'],['POST','wake-existing']]) {
+      for(const headers of [{},{Authorization:'Bearer sk-bayleaf-owner'}]) {
+        const response=await req('/sandbox/browser/'+name,{method,headers});
+        assert.equal(response.status,404,`${method} /sandbox/browser/${name}`);
+      }
+    }
+    for(const name of ['status','start','restart','stop']) {
+      const response=await req('/__test/'+name,{method:name==='status'?'GET':'POST'});
+      assert.equal(response.status,400);assert.equal((await response.json()).error,'invalid_operation');
+      assert.equal((await req('/__test/'+name+'?service=openchamber',{method:name==='status'?'GET':'POST'})).status,400);
+    }
+    assert.equal(creates+wakes+executions,0);
+  });
+  await check('access revoke/rotate: anonymous, CSRF, bearer and disabled feature fail closed',async()=>{
+    for(const name of ['revoke','rotate']) {
+      const path='/sandbox/browser/access/'+name;
+      assert.equal((await req(path,{method:'POST',owner:false})).status,401);
+      assert.equal((await req(path,{method:'POST',origin:false})).status,403);
+      const bearer=await req(path,{method:'POST',owner:false,headers:{Authorization:'Bearer sk-bayleaf-owner'}});
+      assert.equal(bearer.status,403);assert.equal((await bearer.json()).error,'browser_session_required');
+      assert.equal((await req(path,{method:'POST',headers:{'X-Test-Disabled':'1'}})).status,503);
+      assert.equal((await req(path)).status,404,'access changes are POST-only');
+    }
+    // Reaches the owner controller: no sandbox credential exists to rotate yet.
+    const rotate=await req('/sandbox/browser/access/rotate',{method:'POST'});
+    assert.equal(rotate.status,409);assert.equal((await rotate.json()).error,'sandbox_access_unavailable');
     assert.equal(creates+wakes+executions,0);
   });
   await check('passive dashboard/status probes never wake or contact Toolbox',async()=>{
@@ -365,11 +397,11 @@ try {
     assert.equal(previewCalls,1);
   });
   await check('another owner has independent lifecycle state; legacy continue action does not exist',async()=>{
-    const headers={Authorization:'Bearer sk-bayleaf-other'};
-    const other=await (await req('/sandbox/browser/status',{owner:false,headers})).json();
+    const headers={'X-Test-Owner':'other@example.test'};
+    const other=await (await primary('status',{owner:false,headers})).json();
     assert.equal(other.phase,'idle');assert.equal(other.url,undefined);
     for (const name of ['continue']) {
-      assert.equal((await req('/sandbox/browser/'+name,{method:'POST',owner:false,headers})).status,404);
+      assert.equal((await primary(name,{method:'POST',owner:false,headers})).status,404);
       assert.equal((await action(name)).status,404);
     }
     assert.equal((await status()).url,ready.url);
@@ -382,25 +414,25 @@ try {
     const oldUrl=ready.url;await action('start');ready=await finish();assert.equal(ready.phase,'ready');
     assert.notEqual(ready.url,oldUrl);
   });
-  await check('public iframe navigation permits only the active owner browser in CSP, without widening fetch or POST',async()=>{
+  await check('public previews keep the default frame policy beside an active managed app, without widening fetch or POST',async()=>{
     const exposed=await worker.fetch(api+'/sandbox/expose',{method:'POST',headers:{Authorization:'Bearer sk-bayleaf-owner','Content-Type':'application/json'},body:JSON.stringify({port:8000,access:'public'})});
     assert.equal(exposed.status,200);const url=(await exposed.json()).url;
     const headers={'X-Test-Mode':'navigate','Sec-Fetch-Dest':'iframe','Sec-Fetch-Site':'same-site'};
+    // Retired OpenChamber's __browser slot once widened frame-ancestors; no managed app does now.
+    const owner=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__opencode-web'").first();
+    const legacy={...owner,hostname:'legacy-browser-frame.previews.example.test',slot:'__browser'};
+    const columns=Object.keys(legacy);
+    await db.prepare(`INSERT INTO preview_registrations (${columns.join(',')}) VALUES (${columns.map(()=>'?').join(',')})`).bind(...Object.values(legacy)).run();
     const framed=await worker.fetch(url,{headers});assert.equal(framed.status,200);
-    assert.equal(framed.headers.get('X-Frame-Options'),null);
-    assert.equal(framed.headers.get('Content-Security-Policy').split(';')[0],"frame-ancestors 'self' "+new URL(ready.url).origin);
+    assert.equal(framed.headers.get('Content-Security-Policy').split(';')[0],"frame-ancestors 'self'");
+    assert.equal(framed.headers.get('X-Frame-Options'),'SAMEORIGIN');
     assert.equal((await worker.fetch(url,{headers:{'Sec-Fetch-Site':'same-site','X-Test-Mode':'cors'}})).status,403);
     assert.equal((await worker.fetch(url,{method:'POST',headers})).status,403);
-    const hostname=new URL(ready.url).hostname;
-    await db.prepare('UPDATE preview_registrations SET expires_at=0 WHERE hostname=?').bind(hostname).run();
-    const retired=await worker.fetch(url,{headers});
-    assert.equal(retired.headers.get('Content-Security-Policy').split(';')[0],"frame-ancestors 'self'");
-    assert.equal(retired.headers.get('X-Frame-Options'),'SAMEORIGIN');
-    await db.prepare('UPDATE preview_registrations SET expires_at=? WHERE hostname=?').bind(ready.deadline,hostname).run();
+    await db.prepare('DELETE FROM preview_registrations WHERE hostname=?').bind(legacy.hostname).run();
     await worker.fetch(api+'/sandbox/expose/8000',{method:'DELETE',headers:{Authorization:'Bearer sk-bayleaf-owner'}});
   });
   await check('managed gateway forwards project context and survives ordinary-key rotation',async()=>{
-    const row=await db.prepare('SELECT * FROM preview_registrations WHERE deployment=?').bind('__browser').first();
+    const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__opencode-web'").first();
     assert(row.owner_key_hash);assert.equal(row.expires_at,ready.deadline);
     const origin=new URL(ready.url).origin;
     const session=jwt({aud:origin,generation:row.generation,exp:row.expires_at},previewSecret);
@@ -414,8 +446,10 @@ try {
     assert.equal((await worker.fetch(ready.url,{headers})).status,200);
     assert.equal((await status()).phase,'ready');
   });
-  await check('independent sandbox revoke retires managed links and setup can reauthorize',async()=>{
-    assert.equal((await req('/__test/access/revoke',{method:'POST'})).status,200);
+  await check('owner-session rotate and revoke reach the controller; revoke retires managed links and setup can reauthorize',async()=>{
+    const rotated=await req('/sandbox/browser/access/rotate',{method:'POST'});
+    assert.equal(rotated.status,200);assert.equal((await rotated.json()).success,true);
+    assert.equal((await req('/sandbox/browser/access/revoke',{method:'POST'})).status,200);
     assert.equal((await worker.fetch(ready.url)).status,404);
     assert.equal((await db.prepare("SELECT count(*) n FROM sandbox_credentials WHERE email=? AND state='active'").bind(email).first()).n,0);
     assert.equal((await db.prepare('SELECT revoked FROM user_keys WHERE email=?').bind(email).first()).revoked,0);
@@ -429,7 +463,7 @@ try {
     interrupted=true;await action('restart');const next=await finish();
     assert.equal(next.phase,'failed');assert.equal(next.error,'setup_interrupted');
     interrupted=false;await action('start');ready=await finish();assert.equal(ready.phase,'ready');
-    const status=await (await req('/sandbox/browser/status')).json();
+    const status=await (await primary('status')).json();
     assert.equal(status.previous_failure.error,'setup_interrupted');
     assert.ok(status.previous_failure.elapsed>=0);
     assert.ok(status.timeline.some(e=>e.step==='loading_tools'));
@@ -441,7 +475,7 @@ try {
     const before=executions;
     const result=await (await req('/__test/__expire')).json();assert.equal(result.phase,'expired');
     assert.equal(executions,before);assert.equal(state,'started');
-    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM preview_registrations WHERE deployment=?').bind('__browser').first()).n,0);
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM preview_registrations WHERE slot='__opencode-web'").first()).n,0);
   });
   await check('provider lookup failure never provisions a replacement sandbox',async()=>{
     lookupFails=true;await action('start');const result=await tick();
@@ -466,7 +500,7 @@ try {
   });
   await check('login wake is private, never creates or installs, and invalidates stale app readiness',async()=>{
     const before={creates,executions,launches,previewCalls,wakes};
-    assert.equal((await action('wake-existing')).status,404);
+    assert.equal((await req('/sandbox/browser/wake-existing',{method:'POST'})).status,404);
     const wake=()=>req('/__test/wake-existing',{method:'POST'});
     state='stopped';
     assert.equal((await (await wake()).json()).state,'starting');
@@ -533,14 +567,14 @@ try {
     await req('/__test/__expire');
     assert.equal((await status()).phase,'expired');
     assert.equal((await (await req(cs('status'))).json()).phase,'opening');
-    assert(await (await req('/__test/__alarm')).json(),'retiring OpenChamber cannot erase editor setup alarm');
+    assert(await (await req('/__test/__alarm')).json(),'retiring OpenCode Web cannot erase editor setup alarm');
     for(let i=0;i<8;i++){editor=await (await req(cs('__tick'))).json();if(editor.phase==='ready')break;}
     assert.equal(editor.phase,'ready');
-    assert.equal((await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__browser'").first()).n,0);
+    assert.equal((await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__opencode-web'").first()).n,0);
     assert.equal(await (await req('/__test/__alarm')).json(),editor.deadline*1000);
     await action('start');ready=await finish();assert.equal(ready.phase,'ready');
     await req(cs('__expire'));
-    assert.equal((await status()).url,ready.url,'editor expiry leaves OpenChamber link alone');
+    assert.equal((await status()).url,ready.url,'editor expiry leaves OpenCode Web link alone');
     assert.equal(await (await req('/__test/__alarm')).json(),ready.deadline*1000);
     await req(cs('start'),{method:'POST'});
     for(let i=0;i<8;i++){editor=await (await req(cs('__tick'))).json();if(editor.phase==='ready')break;}
@@ -580,12 +614,14 @@ try {
     assert.equal((await (await req(path('code-server','status'))).json()).url,editor.url);
     await req(path('dufs','__expire'));await req(path('code-server','__expire'));
   });
-  for(const retired of ['nanobot','collabmd']) await check(`retired ${retired} cannot start and legacy managed previews fail closed`,async()=>{
+  for(const retired of ['openchamber','nanobot','collabmd']) await check(`retired ${retired} cannot start and legacy managed previews fail closed`,async()=>{
     const before={executions,launches,previewCalls,wakes};
-    assert.equal((await req('/__test/start?service='+retired,{method:'POST'})).status,400);
+    for(const name of ['start','restart','stop'])
+      assert.equal((await req('/__test/'+name+'?service='+retired,{method:'POST'})).status,400);
+    assert.equal((await req('/__test/status?service='+retired)).status,400);
     assert.deepEqual({executions,launches,previewCalls,wakes},before);
-    const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__browser'").first();
-    const legacy={...row,hostname:'retired-private-fixture.previews.example.test',slot:'__'+retired};
+    const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__opencode-web'").first();
+    const legacy={...row,hostname:'retired-private-fixture.previews.example.test',slot:retired==='openchamber'?'__browser':'__'+retired};
     const columns=Object.keys(legacy);
     await db.prepare(`INSERT INTO preview_registrations (${columns.join(',')}) VALUES (${columns.map(()=>'?').join(',')})`).bind(...Object.values(legacy)).run();
     const origin='https://'+legacy.hostname;
@@ -598,6 +634,17 @@ try {
     }
     assert.equal(lastForwarded,forwarded,'retired slot must never reach the application');
     await db.prepare('DELETE FROM preview_registrations WHERE hostname=?').bind(legacy.hostname).run();
+  });
+  await check('a legacy unnamed OpenChamber controller record is never read, advanced or reported',async()=>{
+    const sibling=await status(), record=await (await req('/__test/__record')).json();
+    const written=await (await req('/__test/__legacy-operation',{method:'POST'})).json();
+    const before={executions,launches,previewCalls,wakes};
+    await req('/__test/__alarm-now');
+    assert.deepEqual({executions,launches,previewCalls,wakes},before,'a due legacy record must not drive setup');
+    assert.deepEqual(await (await req('/__test/__legacy-record')).json(),written);
+    assert.deepEqual(await (await req('/__test/__record')).json(),record);
+    assert.equal((await status()).url,sibling.url);
+    // Left in place: later checks prove sibling lifecycles keep ignoring it.
   });
   await check('Jupyter keeps native token behind owner/origin gates on HTTP and WS through its relay, and coexists',async()=>{
     const jp=action=>'/__test/'+action+'?service=jupyter';
@@ -673,7 +720,16 @@ try {
   });
    await check('OpenCode Web configures the private origin before readiness and gates terminal traffic',async()=>{
      const path=action=>'/__test/'+action+'?service=opencode-web';
-     const sibling=(await status()).url;
+     // The primary link from earlier checks is retired so this setup starts fresh,
+     // beside a ready editor sibling.
+     const cs=action=>'/__test/'+action+'?service=code-server';
+     await req(path('__expire'));
+     await req(cs('start'),{method:'POST'});
+     let editor;
+     for(let i=0;i<12;i++){editor=await(await req(cs('__tick'))).json();if(editor.phase==='ready')break;}
+     assert.equal(editor.phase,'ready');
+     const sibling=editor.url;
+     const status=async()=>(await req(cs('status'))).json();
      assert.equal((await worker.fetch(api+'/sandbox/expose',{method:'POST',headers:{Authorization:'Bearer sk-bayleaf-rotated',
        'Content-Type':'application/json'},body:JSON.stringify({port:8795,access:'public'})})).status,400);
      await req(path('start'),{method:'POST'});
@@ -737,6 +793,9 @@ try {
        assert.equal(op.error,'preview_unavailable');
        assert.equal(await db.prepare("SELECT hostname FROM preview_registrations WHERE slot='__opencode-web'").first(),null);
      } finally { wrongOpencodeOrigin=false; }
+     // Restore the primary link that later sibling checks rely on.
+     await req(cs('__expire'));
+     await action('start');ready=await finish();assert.equal(ready.phase,'ready');
    });
    await check('Jupyter owner stop closes sockets, revokes access, and preserves siblings',async()=>{
     const jp=action=>'/__test/'+action+'?service=jupyter';
@@ -867,7 +926,7 @@ try {
     for(const outcome of ['503','transport']) {
       exists=false;failCreate=outcome==='503';createKeys=[];
       const before={creates,creationRequests};
-      await req('/sandbox/browser/restart',{method:'POST',headers:outcome==='transport'?{'X-Test-Create-Transport':'1'}:{}});
+      await primary('restart',{method:'POST',headers:outcome==='transport'?{'X-Test-Create-Transport':'1'}:{}});
       assert.equal((await tick()).error,'creation_failed');
       failCreate=false;
       await action('start');ready=await finish();assert.equal(ready.phase,'ready');

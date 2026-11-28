@@ -559,27 +559,6 @@ export const GrantModelsSchema = z.object({
     available: z.boolean().describe('Backend-specific catalog availability, not a model-health or inference guarantee. OpenRouter reports successful retrieval, Vertex has a static catalog when enabled, and Bedrock requires a nonempty retrieved catalog.'),
   })),
 }).openapi('GrantModels');
-// Browser lifecycle metadata only: no credentials, file contents, or setup logs.
-export const BrowserSandboxStatusSchema = z.object({
-  phase: z.enum(['idle', 'opening', 'ready', 'failed', 'expired', 'stopped', 'unavailable']),
-  machine: z.string().optional(),
-  progress: z.string().optional(),
-  operation: z.string().optional(),
-  deadline: z.number().int().optional().describe('Private browser-link expiry, Unix seconds; not a compute deadline.'),
-  updated_at: z.number().int().optional(),
-  started_at: z.number().int().optional(),
-  heartbeat_at: z.number().int().optional(),
-  timeline: z.array(z.object({step:z.string(),at:z.number().int(),error:z.string().optional()})).max(40).optional(),
-  previous_failure: z.object({at:z.number().int(),error:z.string(),progress:z.string(),elapsed:z.number().nonnegative()}).optional(),
-  access_revoked: z.boolean().optional().describe('Stop has revoked the preview and completed active connection invalidation.'),
-  cleanup_pending: z.boolean().optional().describe('Owned-process cleanup is still pending; starting again is blocked.'),
-  cleanup_error: z.string().optional(),
-  url: z.string().url().optional(),
-  error: z.string().optional(),
-}).openapi('BrowserSandboxStatus');
-
-export const BrowserSandboxErrorSchema = z.object({ error: z.string() }).openapi('BrowserSandboxError');
-
 // ── BayLeaf Inboxes (issue #97; contract in inbox/DESIGN.md) ─────
 //
 // The inbox Worker's RPC validates every input again and owns response detail,

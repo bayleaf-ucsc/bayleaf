@@ -41,7 +41,7 @@ Before any future restricted creation, confirm old receiver versions have draine
 
 Nanobot was retired on 2026-11-04. The two-adapter pins, build requirements and
 authority comparison below record that earlier rollout, not current Nanobot
-maintenance instructions. Current hosted agent delivery uses OpenChamber/OpenCode;
+maintenance instructions. Current hosted agent delivery uses OpenCode Web (hosted OpenChamber was retired 2026-11-28);
 inspect its actual published pin rather than reusing this snapshot.
 
 Published source revisions at that rollout (parent `39bf426`):

@@ -109,14 +109,20 @@ the caller's keyed port registration. Neither endpoint accepts
 Campus Pass, an installation credential, or a browser session as authority.
 
 Access defaults to **private** (owner login). Optional `"access":"public"`
-explicitly permits anonymous access. Port 3100 is reserved for the managed
-OpenChamber interface and cannot be exposed through this endpoint. The local
-managed code-server and dufs additions also reserve ports 8791 and 8790. Sandbox
+explicitly permits anonymous access. Ports used by managed services
+(`SERVICE_DEFS` in `src/serviceDefs.ts`, for example code-server 8791 and dufs
+8790) are reserved and cannot be exposed through this endpoint. Port 3100 was
+reserved for hosted OpenChamber until its retirement (deployed 2026-11-28) and
+is now an ordinary port. Sandbox
 agents use the canonical plugin's `bayleaf_expose` tool, which reads the owner key
 internally and defaults to private exposure without displaying credentials.
 
-Public previews may be framed by their owner's active managed OpenChamber origin.
-The gateway permits public GET iframe navigation and emits an exact
+**Retired 2026-11-28 (API `74b94721`):** public previews can no
+longer be framed by a hosted OpenChamber origin, and the exception below is
+historical. Public previews now keep `SAMEORIGIN` and `frame-ancestors 'self'`.
+
+Public previews could be framed by their owner's active managed OpenChamber origin.
+The gateway permitted public GET iframe navigation and emits an exact
 `frame-ancestors` allowlist containing only self and that current owner origin,
 after checking its registration/deadline/key binding. It removes `X-Frame-Options`
 only when granting this exception. Other sibling origins remain blocked by CSP;
@@ -150,7 +156,7 @@ code-server uses slot `__code-server` and dufs uses `__dufs` under the existing 
 policy. Owner-key binding is deployment-based, not tied to the slot spelling;
 the gateway now also requires a known managed slot. Migration 0013 already
 provides the fingerprint column, so no schema change is needed. Public framing
-remains exclusive to the legacy OpenChamber slot. `X-Opencode-Directory` was
+remained exclusive to the legacy OpenChamber slot (retired with it, 2026-11-28 revision). `X-Opencode-Directory` was
 also slot-exclusive until the 2026-10-27 header-passthrough revision; it now
 reaches any app as an ordinary same-origin application header.
 The leftover six-hour managed-registration cap is corrected to 24 hours and the

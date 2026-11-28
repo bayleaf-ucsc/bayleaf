@@ -15,7 +15,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import secrets
 import signal
 import socket
 import subprocess
@@ -29,11 +28,8 @@ import tarfile
 import gzip
 
 SCHEMA = 1
-RELEASE = 'openchamber-managed-v2'
-PACKAGES = ['@openchamber/web@latest']
-PORT = 3100
-ROOT = Path.home() / '.local/share/bayleaf/browser'
-SERVICE = 'openchamber'
+# Selected per invocation by select_service(); there is no default service.
+SERVICE = RELEASE = PORT = ROOT = None
 MAX_ARCHIVE_BYTES = 512*1024*1024
 MAX_UNPACKED_BYTES = 2*1024**3
 MAX_ARCHIVE_MEMBERS = 100000
@@ -46,10 +42,6 @@ SERVICES = {
         'install': 'install_jupyter', 'configure': 'configure_jupyter', 'prepare': 'prepare_plain_service',
         'start': 'start_jupyter', 'bootstrap': 'bootstrap_plain_service', 'health': 'health_jupyter',
         'health_path': '/api/status', 'starting': 'starting_jupyter'},
-    'openchamber': {'release': RELEASE, 'port': PORT, 'directory': 'browser',
-        'install': 'install', 'configure': 'configure', 'prepare': 'prepare_openchamber',
-        'start': 'start_openchamber', 'bootstrap': 'bootstrap', 'health': 'health_openchamber',
-        'health_path': '/health', 'starting': 'starting_openchamber'},
     'opencode-web': {'release': 'opencode-web-2.4.1-v1', 'port': 8795, 'directory': 'opencode-web',
         'install': 'install_opencode_web', 'configure': 'configure_opencode_web', 'prepare': 'prepare_plain_service',
         'start': 'start_opencode_web', 'bootstrap': 'bootstrap_opencode_web', 'health': 'health_opencode_web',
@@ -284,10 +276,6 @@ def health():
         return False
 
 
-def health_openchamber(data):
-    return isinstance(data, dict) and isinstance(data.get('openchamberVersion'), str) and data.get('isOpenCodeReady') is True
-
-
 def health_opencode_web(data):
     return isinstance(data, dict) and data.get('version') == OPENCODE_WEB_VERSION
 
@@ -319,49 +307,6 @@ def inspect():
         'installed': read('state/installation.json', {}).get('release') == RELEASE,
         'ready': ready, 'running': alive(runtime.get('process')), 'port': PORT,
         **({'preview_origin': read('request.json', {}).get('preview_origin')} if SERVICE == 'opencode-web' and ready else {})}
-
-
-def install(progress):
-    release = ROOT / 'releases' / RELEASE
-    manifest = read('state/installation.json', {})
-    bins = release / 'bin'
-    if manifest.get('release') == RELEASE and (bins / 'openchamber').is_file():
-        return release
-    if not shutil.which('node') or not shutil.which('npm'):
-        raise Failure('node_22_required')
-    try:
-        version = subprocess.check_output(['node', '--version'], timeout=10, text=True).strip()
-        if int(version.lstrip('v').split('.')[0]) < 22:
-            raise Failure('node_22_required')
-    except (ValueError, subprocess.SubprocessError):
-        raise Failure('node_22_required') from None
-    if shutil.disk_usage(ROOT).free < 1536 * 1024**2:
-        raise Failure('insufficient_disk')
-    limit = Path('/sys/fs/cgroup/memory.max')
-    if limit.exists() and limit.read_text().strip() != 'max' and int(limit.read_text()) < 2*1024**3:
-        raise Failure('requires_2_gib')
-    progress.update('installing', step='installing_openchamber')
-    stage = ROOT / 'releases' / (RELEASE + '.staging')
-    # Only this installer-owned staging directory is disposable.
-    if stage.exists():
-        shutil.rmtree(stage)
-    stage.mkdir(parents=True, mode=0o700)
-    try:
-        command(['npm', 'install', '--global', '--prefix', str(stage), '--no-audit', '--no-fund', *PACKAGES], timeout=900)
-        command([str(stage / 'bin/openchamber'), '--version'])
-    except Failure:
-        raise Failure('installation_failed') from None
-    # Preserve a damaged prior release for inspection rather than deleting it.
-    if release.exists():
-        release.rename(release.with_name(RELEASE + '.retired-' + str(time.time_ns())))
-    stage.rename(release)
-    link = ROOT / 'current.next'
-    link.unlink(missing_ok=True)
-    link.symlink_to(release)
-    os.replace(link, ROOT / 'current')
-    atomic('state/installation.json', {'schema': SCHEMA, 'release': RELEASE,
-        'packages': PACKAGES, 'completed_at': int(time.time())})
-    return release
 
 
 class BoundedArchiveReader:
@@ -691,11 +636,6 @@ def prepare_plain_service(operation, progress):
     pass
 
 
-def prepare_openchamber(operation, progress):
-    progress.update('configuring', step='installing_opencode')
-    ensure_opencode(operation)
-
-
 def start_code_server(backend_port):
     executable = ROOT / 'releases' / RELEASE / 'bin/code-server'
     return [str(executable), '--config', str(ROOT / 'config.yaml'), '--bind-addr', f'0.0.0.0:{PORT}', '--auth', 'none',
@@ -726,11 +666,6 @@ def service_environment():
         if SANDBOX_PLACEHOLDER.fullmatch(value):
             env['BAYLEAF_API_KEY'] = value
     return env
-
-
-def start_openchamber(backend_port):
-    executable = ROOT / 'releases' / RELEASE / 'bin/openchamber'
-    return [str(executable), 'serve', '--foreground', '--host', '0.0.0.0', '--port', str(PORT)], environment(backend_port)
 
 
 def bootstrap_plain_service(backend_port, operation, report):
@@ -796,45 +731,6 @@ def configure_agent():
     return key, fingerprint
 
 
-def configure():
-    key, fingerprint = configure_agent()
-    # Custom themes are supported upstream, so the pinned application stays intact.
-    if not (ROOT / 'openchamber/themes/bayleaf-light.json').exists():
-        atomic('openchamber/themes/bayleaf-light.json', {
-            'metadata': {'id': 'bayleaf-light', 'name': 'BayLeaf', 'variant': 'light',
-                'version': '1.0.0', 'description': 'Cool leaf-green workspace for BayLeaf sandboxes',
-                'tags': ['light', 'green', 'bayleaf']},
-            'colors': {
-                'primary': {'base': '#246341', 'foreground': '#ffffff',
-                    'hover': '#1c5235', 'active': '#143f29', 'muted': '#24634130'},
-                'surface': {'background': '#f2faf4', 'foreground': '#182d21',
-                    'muted': '#e3f0e7', 'mutedForeground': '#4c6354',
-                    'elevated': '#fbfefc', 'subtle': '#eaf5ed', 'overlay': '#182d2120'},
-                'interactive': {'border': '#b7cebe', 'borderHover': '#799d87',
-                    'focusRing': '#246341', 'selection': '#9bd5ae60',
-                    'hover': '#24634112', 'active': '#24634122'},
-                'status': {'error': '#a52d38', 'warning': '#805400',
-                    'success': '#246341', 'info': '#225c91'},
-                'syntax': {'base': {'background': '#eaf5ed', 'comment': '#506957',
-                    'keyword': '#225c91', 'string': '#236449', 'number': '#704890',
-                    'function': '#32603b', 'variable': '#182d21',
-                    'type': '#76520b', 'operator': '#983447'}},
-                'chat': {'userMessageBackground': '#e3f0e7', 'divider': '#b7cebe'},
-                'markdown': {'link': '#225c91', 'linkHover': '#19456d',
-                    'inlineCode': '#236449', 'inlineCodeBackground': '#e3f0e7',
-                    'blockquote': '#4c6354', 'blockquoteBorder': '#799d87'}
-            }})
-    # Only seed our fresh application settings. Subsequent user choices survive.
-    if not (ROOT / 'openchamber/settings.json').exists():
-        workspace = str(Path.home() / 'workspace')
-        atomic('openchamber/settings.json', {'lastDirectory': workspace,
-            'projects': [{'id': 'bayleaf-workspace', 'path': workspace, 'label': 'workspace'}],
-            'activeProjectId': 'bayleaf-workspace', 'themeId': 'bayleaf-light',
-            'lightThemeId': 'bayleaf-light', 'themeVariant': 'light', 'useSystemTheme': False})
-    seed_classifier(key)
-    return fingerprint
-
-
 def opencode_preview_origin():
     origin = read('request.json', {}).get('preview_origin')
     # The controller supplies a private preview hostname, never user input.
@@ -851,28 +747,6 @@ def configure_opencode_web():
     return hashlib.sha256((fingerprint + ':' + managed_app_secret() + ':' + origin).encode()).hexdigest()
 
 
-# OpenChamber's classifier (Auto routing, permission safety net) through the
-# open-weight, ZDR plaintext decisions lane (issue #168). OpenChamber reads
-# these files on every decision, so no restart is needed.
-CLASSIFIER = {'url': 'https://api.bayleaf.dev/v1/decisions', 'model': 'openrouter:cloudflare/clef-flash'}
-
-
-def seed_classifier(key):
-    """Select BayLeaf Clef only while the owner has made no classifier choice."""
-    path = ROOT / 'openchamber/classifier-endpoint.json'
-    saved = read('openchamber/classifier-endpoint.json')
-    endpoint = saved.get('endpoint') if isinstance(saved, dict) else None
-    ours = isinstance(endpoint, dict) and all(endpoint.get(k) == v for k, v in CLASSIFIER.items())
-    # Follow a reissued placeholder, but never replace a key the owner typed.
-    if ours and SANDBOX_PLACEHOLDER.fullmatch(endpoint.get('key', '')) and endpoint['key'] != key:
-        atomic('openchamber/classifier-endpoint.json', {'version': 1, 'endpoint': {**CLASSIFIER, 'key': key}})
-    if (ROOT / 'openchamber/classification.json').exists() or (path.exists() and not ours):
-        return
-    # Endpoint first: interrupted seeding leaves no choice behind and retries.
-    atomic('openchamber/classifier-endpoint.json', {'version': 1, 'endpoint': {**CLASSIFIER, 'key': key}})
-    atomic('openchamber/classification.json', {'version': 1, 'source': 'custom'})
-
-
 def agent_environment():
     env = service_environment()
     # Never inherit an external-server attachment from unrelated sandbox work.
@@ -883,27 +757,6 @@ def agent_environment():
     for key, folder in [('XDG_CONFIG_HOME','config'), ('XDG_DATA_HOME','data'),
                         ('XDG_CACHE_HOME','cache'), ('XDG_STATE_HOME','state')]:
         env[key] = str(ROOT / folder)
-    return env
-
-
-def environment(backend_port=None):
-    env = agent_environment()
-    prefix = ROOT / 'releases' / RELEASE
-    bins = prefix / 'bin'
-    env.update(OPENCHAMBER_DATA_DIR=str(ROOT / 'openchamber'),
-        OPENCHAMBER_RELAY_HOST='off',
-        npm_config_prefix=str(prefix), OPENCHAMBER_PACKAGE_MANAGER='npm',
-        OPENCHAMBER_OPENCODE_HOSTNAME='127.0.0.1',
-        OPENCHAMBER_ALLOW_UNAUTHENTICATED_LAN='true',
-        BAYLEAF_API_KEY=(ROOT / 'credentials/owner-key').read_text().strip(),
-        PATH=str(bins)+':'+str(Path.home() / '.opencode/bin')+':'+env.get('PATH',''))
-    if backend_port:
-        password = secrets.token_urlsafe(32)
-        # Credentials stay in the child environment and a protected file, not
-        # argv, application logs, or content-free breadcrumbs.
-        atomic('credentials/opencode-password.json', password)
-        env.update(OPENCODE_PORT=str(backend_port), OPENCODE_PASSWORD=password,
-            OPENCODE_SERVER_PASSWORD=password, BAYLEAF_OPENCODE_URL=f'http://127.0.0.1:{backend_port}')
     return env
 
 
@@ -922,47 +775,15 @@ def start_opencode_web(_backend_port):
 
 
 def bootstrap_opencode_web(_backend_port, operation, report):
-    bootstrap(PORT, operation, report=report, password=managed_app_secret())
+    bootstrap(PORT, operation, managed_app_secret(), report=report)
 
 
-def ensure_opencode(operation):
-    """Delegate first installation to OpenChamber's installer and destination."""
-    binary = Path.home() / '.opencode/bin/opencode'
-    if binary.is_file() and os.access(binary, os.X_OK):
-        return
-    request(operation)
-    package = ROOT / 'releases' / RELEASE / 'lib/node_modules/@openchamber/web'
-    # New OpenChamber releases publish the compiled server under build/. An
-    # installed older release can still own the original top-level layout.
-    relative = Path('server/lib/opencode/v2-install.js')
-    installer = next((path for path in (package/'build'/relative, package/relative) if path.is_file()), None)
-    if installer is None:
-        raise Failure('opencode_installation_failed')
-    try:
-        # The web install API currently rejects a completely absent binary.
-        # Invoke the same upstream implementation without reproducing it here.
-        env = environment()
-        # Toolbox can omit SHELL even for a user whose login shell is Bash.
-        # The official installer reads $SHELL under set -u, even without PATH edits.
-        env['SHELL'] = env.get('SHELL') or '/bin/bash'
-        command(['node', '--input-type=module', '-e',
-            'const {installOpenCodeV2}=await import('+json.dumps(installer.as_uri())+'); await installOpenCodeV2();'],
-            env=env, timeout=420)
-        request(operation)
-    except Failure:
-        raise
-    except Exception:
-        raise Failure('opencode_installation_failed') from None
-
-
-def bootstrap(backend_port, operation, origin='https://api.bayleaf.dev/sandbox', report=lambda step: None, password=None):
+def bootstrap(backend_port, operation, password, origin='https://api.bayleaf.dev/sandbox', report=lambda step: None):
     """Register the V2 integration and credential. No secrets in argv/output."""
-    if password is None:
-        password = read('credentials/opencode-password.json')
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     authorization = opencode_basic(password)
     def api(path, body=None, method=None):
-        # OpenChamber can open this location before discovery finishes. Connect
+        # The browser can open this location before discovery finishes. Connect
         # and wait here: the server default becoming ready is not workspace readiness.
         req = urllib.request.Request(f'http://127.0.0.1:{backend_port}'+path,
             data=json.dumps(body).encode() if body is not None else None,
@@ -1248,7 +1069,7 @@ def main():
     global ROOT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path)
-    parser.add_argument('--service', choices=SERVICES, default='openchamber')
+    parser.add_argument('--service', choices=SERVICES, required=True)
     parser.add_argument('action', choices=['inspect', 'setup', 'supervise', 'stop'])
     parser.add_argument('--operation', default='')
     args = parser.parse_args()

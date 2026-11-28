@@ -996,9 +996,8 @@ form posts, webhooks or course mail while their computer is off. An email inbox
 receives mail; an http inbox captures requests to any path and query on its URL.
 For custom workflows, first identify whether external delivery is needed. Start
 with the [focused receiving workflow guide](https://api.bayleaf.dev/docs/inboxes.md);
-desktop agents can load their ${bt}bayleaf-inboxes${bt} skill. Refreshed hosted
-OpenChamber setups use their short sandbox orientation and shared Inboxes
-MCP tools; older hosted setups retain the earlier recipe skill until deliberate setup.
+desktop agents can load their ${bt}bayleaf-inboxes${bt} skill. Hosted OpenCode Web
+in Sandboxes uses its short sandbox orientation and shared Inboxes MCP tools.
 Reception stores data only: it never activates an agent, replies or runs tools.
 Manage with an ordinary BayLeaf key or sandbox credential, not Campus Pass
 or a browser session. An [app token](#app-tokens) with an inbox scope can only read,
@@ -1158,7 +1157,7 @@ room is a durable log that link holders append to and read, with live WebSocket
 delivery, on ${bt}https://bayleaf-rooms.dev${bt}. It never runs code, inference or
 agents, and BayLeaf relays without arbitrating: design apps to converge. Use rooms
 for the live activity only; anything graded is submitted elsewhere. Desktop agents
-can load their ${bt}bayleaf-rooms${bt} skill; hosted OpenChamber sandboxes have the
+can load their ${bt}bayleaf-rooms${bt} skill; hosted OpenCode Web in Sandboxes has the
 same skill, and call the owner API with ${bt}curl${bt} and the sandbox credential. There
 are no Rooms tools. The participant contract (log, WebSocket frames, the Yjs
 provider at ${bt}https://bayleaf-rooms.dev/client/y-bayleaf@1.js${bt}) is the
@@ -1237,20 +1236,17 @@ Browser access (when enabled; ordinary personal keys only):
 - ${bt}POST /sandbox/expose${bt} accepts ${bt}{"port":8000,"access":"private"}${bt}. Private is the default and strongly recommended; public must be explicitly requested. Ports used by managed services are reserved. Bind the service to 0.0.0.0 first.
 - Optional ${bt}upstream_headers${bt} supplies fixed application headers in either access mode, including Authorization/Basic. Nonempty headers require exact ${bt}upstream_headers_applied: true${bt} in the response. Maximum 16 headers, 64-byte HTTP-token names, 4096-byte printable ASCII values and 8192 total bytes; routing/transport/browser-security/provider headers and platform credentials are rejected. Public visitors can exercise injected credentials. Injection is not needed for forwarding: same-origin app requests already pass every non-reserved browser header (for example an app's own CSRF header), and injecting a CSRF marker would disable the app's own check. Upstream 4xx/5xx bodies pass through unless large or naming the upstream. Values remain in tool history and may be reflected by the app; an assertion alone does not identify visitors or prevent direct-upstream spoofing.
 
-- ${bt}GET /sandbox/browser/status${bt} observes setup and browser-link state without waking compute.
-- ${bt}POST /sandbox/browser/start${bt} deliberately sets up or resumes OpenChamber on the same shared sandbox.
-- ${bt}POST /sandbox/browser/restart${bt} repairs the managed browser interface.
-- ${bt}POST /sandbox/browser/stop${bt} revokes OpenChamber access and attempts owned-process cleanup without waking compute. Saved files remain; detached jobs may continue. A response with ${bt}cleanup_pending: true${bt} is not a completed shutdown.
-
-Poll status during setup, then open the returned private URL through the owner's
-browser login. Private browser links last up to 24 hours; expiry revokes link
-access without stopping applications. If the sandbox sleeps or the link expires,
-return to https://sandbox.bayleaf.dev to resume. New sandboxes reserve 1 vCPU
-(burst to 2), have 2 GiB RAM and a 10 GiB disk cap, and pause after one idle
-hour. Pausing preserves running processes. A 503 may
-mean the browser feature is disabled. Browser setup delegates a dedicated sandbox
-credential into the sandbox and persists agent histories there; inference still uses
-BayLeaf's approved ZDR provider path.
+Managed apps (hosted OpenCode Web, code-server, Jupyter, terminal, files, Desktop)
+are started, repaired and stopped by the owner at https://sandbox.bayleaf.dev, on
+the same shared sandbox; there is no ordinary-key lifecycle route for them. Open
+the private URL through the owner's browser login. Private browser links last up
+to 24 hours; expiry revokes link access without stopping applications. If the
+sandbox sleeps or the link expires, return to https://sandbox.bayleaf.dev to
+resume. New sandboxes reserve 1 vCPU (burst to 2), have 2 GiB RAM and a 10 GiB
+disk cap, and pause after one idle hour. Pausing preserves running processes.
+A 503 may mean the browser feature is disabled. Hosted OpenCode Web setup delegates
+a dedicated sandbox credential into the sandbox and persists agent histories there;
+inference still uses BayLeaf's approved ZDR provider path.
 
 ### Computer use
 
@@ -1288,10 +1284,10 @@ the desktop filesystem, applications and agent histories may persist it separate
 Even read-only Toolbox operations refresh Daytona activity. Accessibility and
 recordings are deliberately omitted.
 
-Deliberate hosted OpenChamber setup installs the sandbox-only ${bt}bayleaf${bt}
+Deliberate hosted OpenCode Web setup installs the sandbox-only ${bt}bayleaf${bt}
 CLI and shared stdio MCP for computer use, Inboxes (when enabled) and previews.
 Already-running or sleeping clients are not migrated merely by remote config refresh:
-use the owner-managed setup/repair action. OpenChamber exposes ${bt}sandbox_*${bt}
+use the owner-managed setup/repair action. OpenCode Web exposes ${bt}sandbox_*${bt}
 tools with native MCP approvals for mutations, retaining search/fetch, usage and
 inbox save/delete tools. It receives a short sandbox orientation; scheduling
 knowledge remains available.
