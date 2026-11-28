@@ -1,6 +1,6 @@
 ---
 name: bayleaf-ops-router
-description: Operations playbooks for BayLeaf Chat, API, and Sandbox. Use for desktop OpenChamber onboarding incident response; maintaining the hosted Sandbox plugin, tools, skills, browser workspace or application pins; coordinating BayLeaf-powered agent capabilities and API exposure across hosted OpenCode Web, Chat, desktop skills and llms.txt; API dependency bumps; Open WebUI upgrades; model swaps; Pouch in-browser model qualification; production prompts/tools; Chat request-rate analytics and rate-limit tuning; monitoring failures, probe extensions or browser-token renewal; accessibility evidence; privacy notices; spin-off modules; new service facets; or prod-to-repo backup/reconcile.
+description: Operations playbooks for BayLeaf Chat, API, and Sandbox. Use for desktop OpenChamber onboarding incident response; maintaining the hosted Sandbox plugin, tools, skills, browser workspace or application pins; retiring a managed Sandboxes app; coordinating BayLeaf-powered agent capabilities and API exposure across hosted OpenCode Web, Chat, desktop skills and llms.txt; API dependency bumps; Open WebUI upgrades; model swaps; Pouch in-browser model qualification; production prompts/tools; Chat request-rate analytics and rate-limit tuning; monitoring failures, probe extensions or browser-token renewal; accessibility evidence; privacy notices; spin-off modules; new service facets; or prod-to-repo backup/reconcile.
 ---
 
 # BayLeaf Operations Playbooks
@@ -17,6 +17,7 @@ skip it during normal work.
 | Launching or maintaining the local operator telemetry dashboard | `../bayleaf-operator-dashboard/SKILL.md` (dedicated skill) |
 | Reproducing desktop OpenChamber onboarding failures or qualifying installation/login across platforms | `playbooks/desktop-onboarding-smoke.md` |
 | Maintaining BayLeaf Sandbox, its hosted plugin/tools/skills, browser workspace, or application pins | `playbooks/maintain-sandbox.md` |
+| Retiring a managed Sandboxes app (launcher card, service definition, installer adapter) | `playbooks/retire-managed-app.md` |
 | Changing preview-gateway forwarding/responses, a new Lathe preview-wrapper contract revision, an app that works on localhost but not through a preview, or Daytona preview-proxy behaviour | `playbooks/qualify-preview-gateway.md` |
 | Dependabot issue on `api/`, dependency version bump | `playbooks/api-dependency-bump.md` |
 | New Open WebUI version for Chat | `playbooks/owui-version-bump.md` |
