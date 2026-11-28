@@ -188,6 +188,11 @@ first cycle. The source fixture was verified deleted; no v2 import was
 attempted. The successful single-cycle canary imports still establish that
 archived files can carry over. They do not resolve the production timestamp
 gap or justify bypassing the freshness guard.
+A later single-cycle fixture verified the final canary byte-for-byte on both
+the imported v2 sandbox and the restored v0 source, even though the source
+activity timestamp was 3.536 seconds later than the backup. Both fixture
+sandboxes were deleted. This confirms that the ordering alone is insufficient
+to classify an archive as stale; it does not verify the fleet's archives.
 Daytona's [historical v0 archive implementation](https://github.com/daytonaio/daytona/blob/v0.190.0/apps/api/src/sandbox/managers/sandbox-actions/sandbox-archive.action.ts#L88-L146)
 can reuse a completed backup before destroying the runner copy, and
 [state changes advance activity](https://github.com/daytonaio/daytona/blob/v0.190.0/apps/api/src/sandbox/repositories/sandbox.repository.ts#L96-L122).

@@ -3,6 +3,11 @@
 Dated record of past runs of [`maintain-sandbox.md`](../playbooks/maintain-sandbox.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-27 (#172): Local Wrangler D1 refused a drifted fleet without
+  rebinding it, then verified the exact forward binding and rollback on two
+  synthetic owners. Saved a private Chat rollback snapshot without pausing
+  dispatch. A disposable restore matched its v2 import canary byte-for-byte.
+
 - 2026-11-27 (#172): Applied D1 migration `0024`; deployed the API
   (`6ed07a91`) and Sandboxes (`3c931faf`) with Daytona v0 still selected.
   Public pages and an authenticated passive status read passed. The isolated
