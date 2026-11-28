@@ -265,19 +265,22 @@ def verify_state(live, expected, *, active=False):
     require(live['skill']['content'] == expected['skill']['content'], 'Code Sandbox skill readback mismatch')
 
 
-def candidate_state(before):
+def candidate_state(before, *, allow_v0_key_sync=False):
     key = os.environ.get('LATHE_DAYTONA_V2_KEY')
-    require(key, 'Set LATHE_DAYTONA_V2_KEY to the dedicated v2-only Daytona project key')
+    require(key, 'Set LATHE_DAYTONA_V2_KEY to the dedicated Daytona project key')
     old = before['valves']
     candidate_key = request('api.daytona.com', '/api-keys/current', key)
     old_key = request('api.daytona.com', '/api-keys/current', old['daytona_api_key'])
     require(isinstance(candidate_key, dict) and isinstance(old_key, dict), 'Invalid Daytona key metadata')
     scopes = candidate_key.get('project_permissions')
     require(candidate_key.get('project_id') and candidate_key['project_id'] == old_key.get('project_id') and
-            candidate_key.get('sync_to_v0') is False and isinstance(scopes, list) and
+            key != old['daytona_api_key'] and isinstance(scopes, list) and
             all(isinstance(scope, str) for scope in scopes) and
             sorted(scopes) == ['read:sandboxes', 'write:sandboxes'],
-            'The Lathe key must be v2-only in the same project with exactly read/write sandbox permissions')
+            'Use a separate Lathe key in the same project with exactly read/write sandbox permissions')
+    sync = candidate_key.get('sync_to_v0')
+    require(sync is False or (sync is True and allow_v0_key_sync),
+            'Daytona must report v0 sync disabled unless the operator explicitly allows it')
 
     overrides = json.loads(SOURCE.with_name('valves.public.json').read_text())
     require(isinstance(overrides, dict) and set(overrides) == {
@@ -349,13 +352,13 @@ def report(state):
     print('Verified while inactive. Re-enable Lathe explicitly in OWUI after operator checks.')
 
 
-def promote(path, api_v2_ready):
+def promote(path, api_v2_ready, *, allow_v0_key_sync=False):
     require(api_v2_ready, 'Confirm the shared API v2 cutover and bindings with --api-v2-ready first')
     before = load_before(path)
     live = read_state()
     check_inactive(live['tool'])
     verify_state(live, before)
-    candidate = candidate_state(before)
+    candidate = candidate_state(before, allow_v0_key_sync=allow_v0_key_sync)
     require(candidate['tool']['content'] != before['tool']['content'], 'Candidate source is unchanged')
     # Replace stale intent only after full baseline verification. Even a partial
     # promotion now has a durable record of the exact values to recognize.
@@ -415,20 +418,32 @@ def reconcile_repo(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('backup', 'pause', 'promote', 'verify', 'rollback',
+    parser.add_argument('action', choices=('backup', 'preflight', 'pause', 'promote', 'verify', 'rollback',
                                           'reconcile', 'reconcile-repo'))
     parser.add_argument('--snapshot-dir', type=Path, required=True,
                         help='Explicit private, outside-repo directory used for every rollout command')
     parser.add_argument('--api-v2-ready', action='store_true', help='Confirm API/bindings are ready for promotion')
+    parser.add_argument('--allow-v0-key-sync', action='store_true',
+                        help='Accept operator-approved v0 sync on the separate scoped Lathe key')
     parser.add_argument('--restored', action='store_true', help='With verify, check the restored v0 state')
     args = parser.parse_args()
     if (args.api_v2_ready and args.action != 'promote') or (args.restored and args.action != 'verify'):
         parser.error('--api-v2-ready is for promote; --restored is for verify')
+    if args.allow_v0_key_sync and args.action not in ('preflight', 'promote'):
+        parser.error('--allow-v0-key-sync is for preflight or promote')
     path = snapshot_path(args.snapshot_dir)
     if args.action == 'backup':
         backup(path)
         return
-    actions = {'pause': pause, 'promote': lambda directory: promote(directory, args.api_v2_ready),
+    def preflight(directory):
+        before = load_before(directory)
+        verify_state(read_state(), before, active=before['tool']['is_active'])
+        candidate_state(before, allow_v0_key_sync=args.allow_v0_key_sync)
+        print('Live Chat matches the rollback snapshot; candidate source, valves and key passed preflight.')
+
+    actions = {'preflight': preflight, 'pause': pause,
+               'promote': lambda directory: promote(directory, args.api_v2_ready,
+                                                     allow_v0_key_sync=args.allow_v0_key_sync),
                'verify': lambda directory: verify(directory, args.restored), 'rollback': rollback,
                'reconcile': reconcile, 'reconcile-repo': reconcile_repo}
     with snapshot_lock(path):

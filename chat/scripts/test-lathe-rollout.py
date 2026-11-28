@@ -54,6 +54,7 @@ class RolloutTest(unittest.TestCase):
         self.toggle_loses_response = False
         self.activate_after_source = False
         self.scopes = ['read:sandboxes', 'write:sandboxes']
+        self.new_key_sync = False
         self.enterContext(patch.object(rollout, 'owui', side_effect=self.owui))
         self.key_request = self.enterContext(patch.object(rollout, 'request', side_effect=self.daytona))
         self.enterContext(patch.dict(os.environ, {'LATHE_DAYTONA_V2_KEY': NEW_KEY}))
@@ -63,7 +64,7 @@ class RolloutTest(unittest.TestCase):
     def daytona(self, host, path, token):
         self.assertEqual((host, path), ('api.daytona.com', '/api-keys/current'))
         self.assertIn(token, (OLD_KEY, NEW_KEY))
-        return {'project_id': 'test-project', 'sync_to_v0': token == OLD_KEY,
+        return {'project_id': 'test-project', 'sync_to_v0': token == OLD_KEY or self.new_key_sync,
                 'project_permissions': self.scopes}
 
     def owui(self, path, payload=None, *, method='GET'):
@@ -142,10 +143,19 @@ class RolloutTest(unittest.TestCase):
     def test_restricted_key_preflight_blocks_excess_authority(self):
         self.live['tool']['is_active'] = False
         self.scopes += ['delete:sandboxes']
-        with self.assertRaisesRegex(SystemExit, 'v2-only in the same project'):
-            rollout.promote(self.path, True)
+        with self.assertRaisesRegex(SystemExit, 'exactly read/write'):
+            rollout.promote(self.path, True, allow_v0_key_sync=True)
         self.assertEqual(self.posts, [])
         self.assertFalse((self.path / 'candidate.json').exists())
+
+    def test_v0_sync_requires_explicit_operator_override(self):
+        self.new_key_sync = True
+        with self.assertRaisesRegex(SystemExit, 'explicitly allows it'):
+            rollout.candidate_state(self.before)
+        candidate = rollout.candidate_state(self.before, allow_v0_key_sync=True)
+        self.assertEqual(candidate['valves']['daytona_api_url'], 'https://api.daytona.com')
+        self.assertFalse(candidate['valves']['auto_create_sandbox'])
+        self.assertEqual(self.posts, [])
 
     def test_partial_promotion_can_roll_back_and_retry(self):
         rollout.pause(self.path)

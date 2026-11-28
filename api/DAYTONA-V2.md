@@ -112,7 +112,12 @@ The v2 integration is staged in the checkout. Deployed behavior is documented in
   archived before copying. The passive sandbox probe also sees 503 during
   this maintenance window. Leave inference and unrelated BayLeaf facets live.
 - Back up Chat using `python3 chat/scripts/lathe-rollout.py backup
-  --snapshot-dir <private-dir>`. Use `pause` with the same directory and
+  --snapshot-dir <private-dir>`. With `LATHE_DAYTONA_V2_KEY` loaded, run
+  `preflight` against the same directory before pausing. If the operator
+  has explicitly accepted Daytona's reported v0 sync on the separate
+  credential, include `--allow-v0-key-sync` on both `preflight` and `promote`.
+  The same-project and exact read/write sandbox scope checks still apply.
+  Use `pause` with the same directory and
   drain in-flight calls. Once the API mapping, selected version and gateway
   have been verified, `promote --snapshot-dir <private-dir> --api-v2-ready`
   reads `LATHE_DAYTONA_V2_KEY`, installs the pinned tool and skill, and

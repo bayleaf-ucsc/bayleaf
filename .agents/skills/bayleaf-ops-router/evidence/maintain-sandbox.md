@@ -3,6 +3,11 @@
 Dated record of past runs of [`maintain-sandbox.md`](../playbooks/maintain-sandbox.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-27 (#172): Accepted the operator-approved v0 sync setting on the
+  separate read/write Chat key. The live preflight passed; Daytona returned
+  403 when that key tried to delete an isolated v2 fixture. The Worker key
+  removed the fixture and cleanup was verified.
+
 - 2026-11-27 (#172): Local Wrangler D1 refused a drifted fleet without
   rebinding it, then verified the exact forward binding and rollback on two
   synthetic owners. Saved a private Chat rollback snapshot without pausing
