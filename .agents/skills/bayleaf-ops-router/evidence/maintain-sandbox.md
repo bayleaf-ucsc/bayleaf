@@ -16,10 +16,13 @@ Consult for diagnosis; current procedure lives in the linked file.
   and llms.txt no longer list them. Authenticated OpenCode Web launch on the new
   pin is not yet re-qualified.
   API `74b94721` was built with #174's uncommitted grant warning held back; API
-  `9d1e0ef5` restored it, but both also omitted #173, deployed concurrently
-  by another session and committed seconds later. API `dd231334` redeployed
-  `main` with all three. Lesson: with parallel sessions, fetch and deploy from
-  current `main`, never a working tree with others' changes held aside.
+  `9d1e0ef5` redeployed clean `main` with it. #173 (claim hardening, not yet
+  deployed by its author) then landed on `main`; API `dd231334` deployed it.
+  Its migration 0024 was applied a few minutes after that deploy, not before,
+  so claim initiation likely failed in that window; a live claim then
+  succeeded. Lessons: fetch and deploy from current `main`, never a tree with
+  others' changes held aside, and read every new commit's deploy prerequisites
+  (migrations, bindings) before deploying it.
 
 - 2026-11-28 (#172): Enabled automatic 30-day v2 workspace retention after
   the zero-candidate scheduled dry run and synthetic deletion-safeguard tests.
