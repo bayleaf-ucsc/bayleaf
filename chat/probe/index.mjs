@@ -592,7 +592,11 @@ export function renderedAnswer(complete = false, id = null, observe = false) {
 // Runs in the page. OWUI can replace its initially visible composer while
 // initializing the selected model. Resolve and edit it in one browser task,
 // rather than retaining readiness across separate CDP calls. Never append twice.
+// v0.13.5 also shows the composer before set-up settles the model; a submit then
+// throws "Model not selected" without sending, so wait for the selector's label.
 export function prepareComposer() {
+  const selector = document.querySelector('#model-selector-model-button');
+  if (!selector?.getAttribute('aria-label')?.startsWith('Selected model: ')) return false;
   const input = document.querySelector('#chat-input');
   if (!input?.isContentEditable || !input.getClientRects().length) return false;
   if (input.textContent === "What's BayLeaf?") return true;

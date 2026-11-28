@@ -158,6 +158,10 @@ require verification.
   and validate within one retried browser task, not separate selector/focus calls.
   Repair deployed as `44fb81c1-c6a4-4167-a910-c879c81147d0` on 2026-11-04 Pacific;
   actual browser GET/HEAD passed with confirmed persistence, close and cleanup.
+- OWUI v0.13.5 shows the composer about a second before set-up selects the model;
+  a submit then throws "Model not selected" with no request. Preparation waits
+  for `#model-selector-model-button` to read `Selected model: …` before pasting.
+  Deployed as `f06cf71f-83d5-4aae-9fa0-bda4b8235458` on 2026-11-28 Pacific.
 - Fixed upstream, model, and prompt. No caller-supplied inference parameters.
 - Sealed uses pinned verifier/EHBP libraries, the dedicated `BAYLEAF_API_KEY`,
   25-second HTTP deadline, and independent limiter key `sealed`. Never bypass

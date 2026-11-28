@@ -396,6 +396,8 @@ for that same message. The probe uses `#chat-input`, `#send-message-button`,
 and response-container selectors, rechecked against OWUI v0.13.0. Composer
 preparation resolves, focuses, pastes and validates in one browser-side task,
 retrying while the initially visible editor is replaced during initialization.
+Since OWUI v0.13.5 it also waits for `#model-selector-model-button` to report
+`Selected model: …`, because the composer appears before set-up selects a model.
 A chat URL or network idle is not success. HEAD waits for the entire lifecycle,
 including cleanup.
 
@@ -419,6 +421,18 @@ An initial preflight saw one transient record and stopped before qualification;
 the next read found it gone, consistent with concurrent monitoring but not proof
 of its origin. No manual deletion or credential change was made. UptimeRobot's
 scheduled recovery and alert delivery were not independently verified.
+
+**Model-readiness race (2026-11-28 Pacific):** the browser monitor went down at
+2026-11-25 19:35 UTC, as Chat moved to v0.13.5. About one run in three or four
+failed at `first_rendered`: the click returned but no `creation_request` followed.
+Those runs pasted within ~170–300 ms of `composer_ready`. An observe-only local
+headless Chrome (800×600, probe identity, no submission) showed the composer at
+2.1 s and `#model-selector-model-button` reading `Selected model: Basic` only at
+3.1 s. Upstream's `submitPrompt` throws "Model not selected" first in that window.
+A first gate on a guessed `#model-selector-0-button` failed every run at `typed`
+and was rolled back to `083735c9`; the corrected selector, deployed as
+`f06cf71f-83d5-4aae-9fa0-bda4b8235458`, passed 8 GET and 2 HEAD runs with
+confirmed cleanup, and anonymous GET returned 401. All 54 tests passed.
 
 OWUI v0.11.3 creates opening chats inside `/api/chat/completions`, not
 `/api/v1/chats/new`. Request interception validates the fixed model, exact

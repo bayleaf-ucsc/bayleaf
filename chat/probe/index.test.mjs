@@ -838,9 +838,10 @@ test('stalled stream cancellation is bounded without losing the original failed 
 
 test('serialized composer preparation survives replacement and never duplicates or overwrites text', async () => {
   const { runInNewContext } = await import('node:vm');
-  let input = null, pastes = 0, focused = 0;
+  let input = null, pastes = 0, focused = 0, label = 'Select a model';
   const prepare = runInNewContext(`(${prepareComposer.toString()})`, {
-    document: { querySelector: () => input },
+    document: { querySelector: s => s === '#model-selector-model-button'
+      ? { getAttribute: name => name === 'aria-label' ? label : null } : input },
     DataTransfer: class { setData(type, value) { assert.equal(type, 'text/plain'); this.text = value; } },
     ClipboardEvent: class { constructor(type, options) { assert.equal(type, 'paste'); Object.assign(this, options); } },
   });
@@ -849,6 +850,11 @@ test('serialized composer preparation survives replacement and never duplicates 
     getClientRects: () => [1], focus() { focused++; },
     dispatchEvent(event) { pastes++; this.textContent = event.clipboardData.text; },
   });
+  input = editor();
+  assert.equal(prepare(), false, 'v0.13.5 composer is visible before the model is selected');
+  assert.equal(pastes, 0);
+  label = 'Selected model: Basic';
+  input = null;
   assert.equal(prepare(), false, 'composer disappeared after initial readiness');
   input = editor();
   input.isContentEditable = false;
