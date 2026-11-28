@@ -15,6 +15,8 @@ Consult for diagnosis; current procedure lives in the linked file.
   OpenChamber pointer; removed `/sandbox/browser/*` routes return 404; OpenAPI
   and llms.txt no longer list them. Authenticated OpenCode Web launch on the new
   pin is not yet re-qualified.
+  API `74b94721` was built with #174's uncommitted grant warning held back; API
+  `9d1e0ef5` redeployed clean `main` (both changes) to restore it.
 
 - 2026-11-28 (#172): Enabled automatic 30-day v2 workspace retention after
   the zero-candidate scheduled dry run and synthetic deletion-safeguard tests.
