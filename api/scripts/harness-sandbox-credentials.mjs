@@ -18,8 +18,9 @@ const bundle = await build({absWorkingDir:root,stdin:{resolveDir:root,contents:`
     if(path.startsWith('/__test/')) {
       try {
         const data=await req.json();
-        if(path==='/__test/setup')return Response.json(await sc.ensureSandboxCredential(
-          data.trailingSlashes === undefined ? env : {...env,DAYTONA_API_URL:env.DAYTONA_API_URL+'/'.repeat(data.trailingSlashes)},data.email,data.id));
+         if(path==='/__test/setup')return Response.json(await sc.ensureSandboxCredential(
+           data.v2 ? {...env,DAYTONA_API_VERSION:'2'} :
+           data.trailingSlashes === undefined ? env : {...env,DAYTONA_API_URL:env.DAYTONA_API_URL+'/'.repeat(data.trailingSlashes)},data.email,data.id));
         if(path==='/__test/revoke'){await sc.revokeSandboxCredentials(env,data.id);return Response.json(true);}
         if(path==='/__test/rotate'){await sc.rotateSandboxCredential(env,await sc.activeSandboxCredential(env,data.email,data.id));return Response.json(true);}
         if(path==='/__test/cleanup'){await sc.cleanupSandboxCredentials(env);return Response.json(true);}
@@ -35,6 +36,9 @@ const bundle = await build({absWorkingDir:root,stdin:{resolveDir:root,contents:`
   }};
 `},bundle:true,write:false,format:'esm',platform:'browser',external:['cloudflare:workers'],loader:{'.py':'text','.md':'text'}});
 const vault = new Map(), machines = new Map();
+const v2Id = 'sbx_credential-fixture';
+const interruptedName = `BAYLEAF_SANDBOX_${'A'.repeat(32)}`;
+let v2Mounts = ['UNRELATED_SECRET', interruptedName], v2MountStatus = 'applied';
 let failAttachment = false, loseCreateResponse = false, failDeletion = false;
 let minted = 0, discarded = 0, rejectInference = false;
 const metadata = ({value, ...rest}) => rest;
@@ -51,7 +55,26 @@ const mf = new Miniflare(convertV4MiniflareOptions({workers:[{name:'credentials'
     TINFOIL_ADMIN_KEY:'synthetic-admin',ALLOWED_EMAIL_DOMAIN:'example.test',GRANTS_ENABLED:'true',GRANTS_MAX_SECONDS:'3600',
     OIDC_CLIENT_SECRET:'synthetic-signing',PREVIEWS_ENABLED:'false'},
   outboundService:async req=>{
-    const u=new URL(req.url);
+     const u=new URL(req.url);
+     if (u.hostname === 'api.daytona.com') {
+       assert.equal(req.headers.get('Authorization'), 'Bearer synthetic-admin');
+       const path = `/sandboxes/${v2Id}`;
+       if (u.pathname === path) return Response.json({ id: v2Id, status: 'running', labels: { synthetic: email } });
+       if (u.pathname === `${path}/secrets` && req.method === 'GET') {
+         return Response.json({ secrets: v2Mounts, status: v2MountStatus }, { headers: { ETag: '"mount-revision"' } });
+       }
+       if (u.pathname === `${path}/secrets` && req.method === 'PUT') {
+         assert.equal(req.headers.get('If-Match'), '"mount-revision"');
+         ({ secrets: v2Mounts } = await req.json());
+         return new Response(null, { status: 202 });
+       }
+       if (u.pathname.startsWith('/secrets/') && req.method === 'PUT') {
+         const name = u.pathname.split('/').at(-1), { allowed_domains } = await req.json();
+         assert.equal(req.headers.get('If-None-Match'), '*');
+         assert.deepEqual(allowed_domains, ['api.bayleaf.dev']);
+         return Response.json({ name, allowed_domains }, { status: 201 });
+       }
+     }
     if(u.hostname==='daytona.example.test'){
       assert.equal(req.headers.get('Authorization'),'Bearer synthetic-admin');
       if(u.pathname==='/secret' && req.method==='POST'){
@@ -177,5 +200,19 @@ try{
     assert.equal((await db.prepare("SELECT count(*) n FROM sandbox_credentials WHERE state='active'").first()).n,0);
     failAttachment=false;loseCreateResponse=false;await ok(await op('cleanup'));assert.equal(vault.size,0,'failed/ambiguous provisioning cleans exact owned secret');
   }
-  console.log('PASS sandbox credential identity, custody, revocation, shared accounting, mint/heal races, rotation, deletion and partial-provision cleanup');
+   console.log('PASS sandbox credential identity, custody, revocation, shared accounting, mint/heal races, rotation, deletion and partial-provision cleanup');
+   await db.prepare('UPDATE user_keys SET daytona_sandbox_id=? WHERE email=?').bind(v2Id, email).run();
+   await db.prepare(`INSERT INTO sandbox_credentials (id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at)
+     VALUES ('interrupted',?,?,?,?,'pending',?,?)`).bind(email, v2Id, 'a'.repeat(64), interruptedName, 1, 1).run();
+   const v2Setup = () => op('setup', { email, id: v2Id, v2: true });
+   v2MountStatus = 'pending';
+   assert.equal((await v2Setup()).status, 503, 'let Daytona finish applying the earlier mount');
+   assert.equal((await db.prepare("SELECT state FROM sandbox_credentials WHERE id='interrupted'").first()).state, 'revoked');
+   v2MountStatus = 'applied';
+   const replacement = await ok(await v2Setup());
+   assert.equal(replacement.state, 'active');
+   assert.notEqual(replacement.secret_name, interruptedName);
+   assert.deepEqual(v2Mounts, ['UNRELATED_SECRET', replacement.secret_name]);
+   assert.equal((await ok(await v2Setup())).id, replacement.id);
+   console.log('PASS v2 credential retry retires interrupted issuance and preserves every unrelated mount');
 }finally{await mf.dispose();}

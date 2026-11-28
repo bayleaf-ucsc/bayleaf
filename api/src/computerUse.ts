@@ -5,10 +5,11 @@ import { sign, verify } from 'hono/jwt';
 import type { Bindings, UserKeyRow } from './types';
 import { credentialHash } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_PROXY_URL } from './constants';
+import { daytonaV2, v2Execute, v2Toolbox } from './daytonaV2';
 
 // Constant, read-only probe. No shell arguments, paths or code come from callers.
 // Read stat after the last ')' because comm can itself contain parentheses.
-const GENERATION_CODE = `import json, pathlib, signal
+const generationCode = (managedProcess: 'Xvfb' | 'xfce4-session') => `import json, pathlib, signal
 signal.alarm(3)
 p = pathlib.Path("/proc")
 boot = (p / "sys/kernel/random/boot_id").read_text().strip()
@@ -16,15 +17,19 @@ found = []
 for d in p.iterdir():
     if not d.name.isdecimal(): continue
     try:
-        if (d / "comm").read_text().strip() != "Xvfb": continue
-        args = (d / "cmdline").read_bytes().split(b"\\0")
+        if (d / "comm").read_text().strip() != "${managedProcess}": continue
+${managedProcess === 'Xvfb' ? `        args = (d / "cmdline").read_bytes().split(b"\\0")
         if len(args) < 2 or args[1] != b":0": continue
+` : ''}\
         stat = (d / "stat").read_text()
         start = stat[stat.rfind(")") + 2:].split()[19]
         found.append([boot, d.name, start])
     except (FileNotFoundError, ProcessLookupError): pass
 print(json.dumps(found, separators=(",", ":")))`;
-export const COMPUTER_GENERATION_COMMAND = `python3 -c '${GENERATION_CODE}'`;
+export const COMPUTER_GENERATION_COMMAND = `python3 -c '${generationCode('Xvfb')}'`;
+// v2's Xvfb is outside the guest process view. Its desktop session is visible
+// and ends when the display connection dies. Fail closed on multiple sessions.
+const V2_GENERATION_CODE = generationCode('xfce4-session');
 
 export function computerError(status: 400 | 401 | 403 | 409 | 410 | 423 | 502, code: string, message: string) {
   return Response.json({ error: { code, message } }, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -35,12 +40,14 @@ export const sessionEnded = () => computerError(410, 'session_ended',
 /** proxy is trusted provider metadata only, never a caller-selected destination. */
 export async function computerToolbox(env: Bindings, id: string, path: string, body?: unknown, proxy?: string): Promise<Response | null> {
   try {
-    return await fetch(`${(proxy || env.DAYTONA_PROXY_URL || DAYTONA_DEFAULT_PROXY_URL).replace(/\/+$/, '')}/${encodeURIComponent(id)}${path}`, {
+    const init: RequestInit = {
       method: body === undefined ? 'GET' : 'POST',
       headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}`, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
       redirect: 'manual', signal: AbortSignal.timeout(8000), cache: 'no-store',
-    });
+    };
+    if (daytonaV2(env)) return await v2Toolbox(env, { id, state: 'started', toolboxProxyUrl: proxy }, path, init);
+    return await fetch(`${(proxy || env.DAYTONA_PROXY_URL || DAYTONA_DEFAULT_PROXY_URL).replace(/\/+$/, '')}/${encodeURIComponent(id)}${path}`, init);
   } catch { return null; }
 }
 
@@ -52,15 +59,27 @@ export function field(value: unknown, name: string): unknown {
 }
 
 export async function desktopGeneration(env: Bindings, id: string, proxy?: string): Promise<string | Response> {
-  const r = await computerToolbox(env, id, '/process/execute', { command: COMPUTER_GENERATION_COMMAND, timeout: 5000 }, proxy);
-  if (!r?.ok) {
-    const status = r?.status;
-    await r?.body?.cancel();
-    return computerError(status === 404 || status === 410 ? 410 : 409,
-      'sandbox_not_running', 'Toolbox unavailable. Start the sandbox or Desktop deliberately, then open a new session.');
-  }
   try {
-    const data: unknown = await r.json();
+    let data: unknown;
+    if (daytonaV2(env)) {
+      const m = { id, state: 'started', toolboxProxyUrl: proxy };
+      const [status, result] = await Promise.all([
+        v2Toolbox(env, m, '/computeruse/status', { signal: AbortSignal.timeout(8000) }),
+        v2Execute(env, m, ['python3', '-c', V2_GENERATION_CODE], 5000),
+      ]);
+      if (!status.ok) { await status.body?.cancel(); return desktopMissing(); }
+      if (field(await status.json(), 'status') !== 'active') return desktopMissing();
+      data = result;
+    } else {
+      const r = await computerToolbox(env, id, '/process/execute', { command: COMPUTER_GENERATION_COMMAND, timeout: 5000 }, proxy);
+      if (!r?.ok) {
+        const status = r?.status;
+        await r?.body?.cancel();
+        return computerError(status === 404 || status === 410 ? 410 : 409,
+          'sandbox_not_running', 'Toolbox unavailable. Start the sandbox or Desktop deliberately, then open a new session.');
+      }
+      data = await r.json();
+    }
     const output = field(data, 'result') ?? field(data, 'output');
     if (field(data, 'exitCode') !== 0 || typeof output !== 'string' || output.length > 512) return desktopMissing();
     const triples: unknown = JSON.parse(output);
@@ -73,7 +92,7 @@ export async function desktopGeneration(env: Bindings, id: string, proxy?: strin
   } catch { return desktopMissing(); }
 }
 const desktopMissing = () => computerError(409, 'desktop_not_running',
-  'Cannot identify exactly one Xvfb on display :0. Start Desktop deliberately, then open a new session.');
+  'Cannot identify the managed desktop display. Start Desktop deliberately, then open a new session.');
 
 const purpose = 'bayleaf-computer-session-v1';
 const ownerHash = (row: UserKeyRow) => credentialHash(`${purpose}:${row.account_generation}:${row.email}`);

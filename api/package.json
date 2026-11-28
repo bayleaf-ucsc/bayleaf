@@ -30,6 +30,7 @@
     "test:shared-mcp": "node scripts/build-sandbox-cli.mjs && python3 scripts/test-browser-setup.py && node scripts/harness-shared-mcp.mjs",
     "test:sandbox-upload": "node scripts/test-sandbox-upload.mjs",
     "test:sandbox-reaper": "node scripts/test-sandbox-reaper.mjs",
+    "test:daytona-v2": "node scripts/test-daytona-v2.mjs",
     "test:sandbox-browser": "python3 scripts/test-browser-setup.py && python3 scripts/test-desktop-cleanup.py && node scripts/test-sandbox-policy.mjs && node scripts/harness-sandbox-browser.mjs",
     "test:service-sessions": "node scripts/harness-service-sessions.mjs && node ../sandbox/test-worker.mjs",
     "test:user-activity": "node scripts/test-user-activity.mjs",

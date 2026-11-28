@@ -6,6 +6,7 @@ const LABELS = { locating_sandbox:'Locating your sandbox', creating_sandbox:'Cre
   registering_preview:'Creating private browser access', waiting_for_toolbox:'Waiting for the sandbox connection; retrying automatically',
   failed:'Setup failed', expired:'Browser link expired', stopped:'Browser access unavailable' };
 const ERRORS = {
+  migration_in_progress:'Workspace migration is in progress. Your files are preserved; reopen this service after the maintenance window.',
   insufficient_disk:'Your sandbox needs more free storage. Free up space or contact BayLeaf support.',
   requires_2_gib:'Your sandbox needs more memory. Contact BayLeaf support to upgrade it and keep your files.',
   public_sandbox:'Your sandbox’s privacy settings need attention. Contact BayLeaf support.',

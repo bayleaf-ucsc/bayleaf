@@ -9,7 +9,8 @@ import { getSession } from '../utils/session';
 import { getAuthIP, isCampusPassEligible } from '../utils/ip';
 import { inspectCounter, parseLimit } from '../utils/campusRpd';
 import { getActiveRow, resolveOrKeyInfo } from '../provision';
-import { findSandboxByLabel, getSandboxInfo, type SandboxInfo } from '../daytona';
+import { findSandboxByLabel, getSandboxInfo, lookupOwnedV2Sandbox, type SandboxInfo } from '../daytona';
+import { daytonaV2 } from '../daytonaV2';
 import { LandingPage, type CampusUsage } from '../templates/landing';
 import { DashboardPage, type AltBackendUsage } from '../templates/dashboard';
 import { renderPage } from '../templates/layout';
@@ -92,9 +93,11 @@ dashboardRoutes.get('/dashboard', async (c) => {
 
   // Fetch sandbox status (non-blocking — don't fail the page if this errors).
   let sandboxInfo: SandboxInfo | null = null;
-  if (row && c.env.DAYTONA_API_KEY) {
+  if (row && c.env.DAYTONA_API_KEY && c.env.SANDBOX_MIGRATION_READONLY !== 'true') {
     try {
-      if (row.daytona_sandbox_id) {
+      if (daytonaV2(c.env)) {
+        sandboxInfo = await lookupOwnedV2Sandbox(session.email, c.env, row.daytona_sandbox_id);
+      } else if (row.daytona_sandbox_id) {
         try {
           sandboxInfo = await getSandboxInfo(row.daytona_sandbox_id, c.env);
         } catch {

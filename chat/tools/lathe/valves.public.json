@@ -1,4 +1,7 @@
 {
   "auto_create_sandbox": false,
-  "sandbox_missing_message": "No sandbox exists for your account. Visit https://api.bayleaf.dev/, sign in with your UCSC account, and click \"Set up sandbox.\" When setup finishes, return here and retry."
+  "daytona_api_url": "https://api.daytona.com",
+  "daytona_proxy_url": "",
+  "sandbox_create_overrides": "",
+  "sandbox_missing_message": "No sandbox exists for your account. Visit https://sandbox.bayleaf.dev/, sign in with your UCSC account, then open a managed app to set up your sandbox. When setup finishes, return here and retry."
 }

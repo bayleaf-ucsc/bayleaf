@@ -15,6 +15,12 @@ Consult for diagnosis; current procedure lives in the linked file.
   Go check 200 and contract script 25/25. Daytona source audit used the
   archived repo; see Daytona references.
 
+- 2026-11-27 (bayleaf#172): A local Worker with the real Daytona v2 preview
+  initially corrupted the noVNC greeting while direct Daytona returned RFB.
+  Selecting `arraybuffer` on both relay sockets restored private noVNC HTTP,
+  binary RFB, non-owner denial, and link reuse after pause/resume. Disposable
+  resources removed. The shared gateway was not changed.
+
 ## Moved from the body
 
 Original wording, verbatim, as it stood in the procedure.

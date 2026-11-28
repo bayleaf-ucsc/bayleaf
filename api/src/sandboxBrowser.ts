@@ -8,21 +8,23 @@ import setupSource from '../scripts/browser-setup.py';
 import jupyterSource from '../scripts/jupyter-adapter.py';
 import desktopCleanupSource from '../scripts/desktop-cleanup.py';
 import sandboxCliAssets from '../.sandbox-cli-assets.json';
-import { getAccountRow, activeSandboxCredential, ensureSandboxCredential, revokeSandboxCredentials, rotateSandboxCredential } from './sandboxCredentials';
+import { getAccountRow, activeSandboxCredential, ensureSandboxCredential, revokeSandboxCredentials, rotateSandboxCredential, v2SecretName, v2CredentialApplied } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
-import { persistentSandboxParams } from './daytona';
+import { persistentSandboxParams, createPersistentSandbox, createSignedPreview, refreshActivity, lookupOwnedV2Sandbox, wakeV2Sandbox } from './daytona';
+import { daytonaV2, legacySandboxId, getV2Sandbox, v2Execute, v2Toolbox } from './daytonaV2';
 import { registerBrowserPreview, revokeUserPreview, previewsEnabled } from './routes/previews';
 import { SERVICE_DEFS, serviceDef, managedAppAuth, type ServiceId, type ServiceDef } from './serviceDefs';
 
 const LINK_SECONDS = 24 * 3600;
 const SETUP_SECONDS = 20 * 60;
+const RESUME_SECONDS = 120;
 const now = () => Math.floor(Date.now() / 1000);
 export const browserEnabled = (env: Bindings) => env.BROWSER_SANDBOX_ENABLED === 'true' && previewsEnabled(env);
 export const keyHash = async (token: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))),
   b => b.toString(16).padStart(2, '0')).join('');
 
 type Phase = 'opening' | 'ready' | 'failed' | 'expired' | 'stopped';
-type Step = 'discover' | 'credentials' | 'wake' | 'prepare' | 'inspect' | 'register';
+type Step = 'discover' | 'credentials' | 'wake' | 'prepare' | 'inspect' | 'register' | 'verify-resume';
 interface ProgressEvent { step: string; at: number; error?: string }
 interface Operation {
   service?: ServiceId; // Missing on legacy OpenChamber operations.
@@ -42,6 +44,7 @@ interface Operation {
   error?: string;
   url?: string;
   wakeRequested?: boolean;
+  bootId?: string;
   launches?: number;
   creationAttempted?: boolean;
   restart?: boolean;
@@ -52,6 +55,7 @@ interface Operation {
   heartbeatAt?: number;
   cleanupPending?: boolean;
   cleanupError?: string;
+  launchAfterCleanup?: { deadline: number; restart: boolean };
   processesReaped?: number;
 }
 interface Machine {
@@ -73,12 +77,14 @@ async function platform(env: Bindings, path: string, method = 'GET', body?: unkn
   });
 }
 async function machine(env: Bindings, id: string): Promise<Machine | null> {
+  if (daytonaV2(env)) return legacySandboxId(id) ? null : getV2Sandbox(id, env);
   const r = await platform(env, `/sandbox/${encodeURIComponent(id)}`);
   if (r.status === 404) return null;
   if (!r.ok) return fail('provider_unavailable');
   return r.json();
 }
-async function discover(env: Bindings, email: string): Promise<Machine | null> {
+async function discover(env: Bindings, email: string, cachedId?: string | null): Promise<Machine | null> {
+  if (daytonaV2(env)) return lookupOwnedV2Sandbox(email, env, cachedId);
   const labels = { [env.DAYTONA_DEPLOYMENT_LABEL]: email };
   const r = await platform(env, `/sandbox?labels=${encodeURIComponent(JSON.stringify(labels))}`);
   if (!r.ok) return fail('provider_unavailable');
@@ -93,6 +99,13 @@ function toolbox(env: Bindings, id: string, path: string) {
   return `${(env.DAYTONA_PROXY_URL || DAYTONA_DEFAULT_PROXY_URL).replace(/\/+$/, '')}/${encodeURIComponent(id)}${path}`;
 }
 async function execute(env: Bindings, id: string, command: string): Promise<string> {
+  if (daytonaV2(env)) {
+    const m = await getV2Sandbox(id, env);
+    if (!m) return fail('sandbox_missing');
+    const result = await v2Execute(env, m, ['bash', '-c', command], 10_000).catch(() => fail('toolbox_unavailable'));
+    if (result.exitCode !== 0) fail('setup_command_failed');
+    return result.output;
+  }
   const r = await fetch(toolbox(env, id, '/process/execute'), {
     method: 'POST', headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ command, timeout: 10000 }), redirect: 'manual', signal: AbortSignal.timeout(15_000),
@@ -102,9 +115,23 @@ async function execute(env: Bindings, id: string, command: string): Promise<stri
   if (data.exitCode !== 0) return fail('setup_command_failed');
   return data.result ?? '';
 }
+async function sandboxBootId(env: Bindings, id: string): Promise<string> {
+  const bootId = (await execute(env, id, 'cat /proc/sys/kernel/random/boot_id')).trim();
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(bootId)) return fail('toolbox_unavailable');
+  return bootId;
+}
 async function upload(env: Bindings, id: string, root: string, name: string, content: string) {
   const form = new FormData();
   form.append('file', new Blob([content]), 'file');
+  if (daytonaV2(env)) {
+    const m = await getV2Sandbox(id, env);
+    if (!m) return fail('sandbox_missing');
+    const r = await v2Toolbox(env, m, `/files/upload?${new URLSearchParams({ path: `${root}/${name}` })}`,
+      { method: 'POST', body: form, signal: AbortSignal.timeout(15_000) }).catch(() => fail('setup_transfer_failed'));
+    await r.body?.cancel();
+    if (!r.ok) fail('setup_transfer_failed');
+    return;
+  }
   const r = await fetch(toolbox(env, id, `/files/upload?path=${encodeURIComponent(`${root}/${name}`)}`), {
     method: 'POST', headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}` }, body: form,
     redirect: 'manual', signal: AbortSignal.timeout(15_000),
@@ -115,10 +142,15 @@ async function upload(env: Bindings, id: string, root: string, name: string, con
 // Daytona's own computer-use supervisor runs the Desktop stack. Bodies are
 // parsed in memory and never logged; they carry only process records.
 async function computerUse(env: Bindings, id: string, action: 'start' | 'stop' | 'status'): Promise<unknown> {
-  const r = await fetch(toolbox(env, id, `/computeruse/${action}`), {
+  const m = daytonaV2(env) ? await getV2Sandbox(id, env) : null;
+  if (daytonaV2(env) && !m) return fail('sandbox_missing');
+  const path = `/computeruse/${action}`;
+  const init = {
     method: action === 'status' ? 'GET' : 'POST', headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}` },
-    redirect: 'manual', signal: AbortSignal.timeout(15_000),
-  }).catch(() => fail('toolbox_unavailable'));
+    redirect: 'manual' as const, signal: AbortSignal.timeout(15_000),
+  };
+  const r = await (m ? v2Toolbox(env, m, path, init) : fetch(toolbox(env, id, path), init))
+    .catch(() => fail('toolbox_unavailable'));
   if (!r.ok) { await r.body?.cancel(); return fail('toolbox_unavailable'); }
   const text = await r.text();
   if (text.length > 8192) fail('invalid_desktop_status');
@@ -140,6 +172,12 @@ const desktopActive = (data: unknown) => (data as { status?: unknown } | null)?.
   desktopRunning(data)?.every(Boolean) === true;
 /** Stop the stack, then reap the session daemons /computeruse/stop leaks. */
 async function stopDesktop(env: Bindings, id: string, def: ServiceDef): Promise<number> {
+  if (daytonaV2(env)) {
+    await computerUse(env, id, 'stop');
+    const status = await computerUse(env, id, 'status') as { status?: unknown };
+    if (status.status !== 'inactive') fail('invalid_stop_status');
+    return 0;
+  }
   const running = desktopRunning(await computerUse(env, id, 'stop'));
   if (!running || running.some(Boolean)) fail('invalid_stop_status');
   await execute(env, id, `mkdir -p ${def.root}`);
@@ -150,13 +188,42 @@ async function stopDesktop(env: Bindings, id: string, def: ServiceDef): Promise<
   if (result.stopped !== true || !Number.isInteger(result.reaped) || Number(result.reaped) < 0) fail('invalid_stop_status');
   return Math.min(Number(result.reaped), 1000);
 }
+// Match Lathe's v2 bridge port and local RFB target so its private share can
+// coexist with managed Desktop. Refuse an unrelated listener on that port.
+const ensureDesktopBridge = `python3 - <<'PY'
+import http.client, pathlib, socket, subprocess, time
+root = next((p for p in (pathlib.Path('/opt/novnc'), pathlib.Path('/usr/share/novnc'))
+             if (p / 'vnc.html').is_file()), None)
+if root is None:
+    raise SystemExit('noVNC assets unavailable')
+page = (root / 'vnc.html').read_bytes()
+with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+    s.connect(('192.0.2.1', 9))
+    host = s.getsockname()[0]
+def listening():
+    with socket.socket() as s:
+        s.settimeout(1)
+        return s.connect_ex((host, 6080)) == 0
+if not listening():
+    subprocess.Popen(['websockify', '--web', str(root), '6080', '127.0.0.1:5900'],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    until = time.monotonic() + 5
+    while not listening() and time.monotonic() < until:
+        time.sleep(.2)
+connection = http.client.HTTPConnection(host, 6080, timeout=2)
+connection.request('GET', '/vnc.html')
+response = connection.getresponse()
+if response.status != 200 or response.read(len(page) + 1) != page:
+    raise SystemExit(1)
+PY`;
 const launch = (operation: string, def: ServiceDef) => `python3 -c ${JSON.stringify(
   `import subprocess; subprocess.Popen(['python3','${def.root}/setup.py','--service','${def.id}','setup','--operation','${operation}'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)`
 )}`;
 const operationKey = (service: ServiceId = 'openchamber') => service === 'openchamber' ? 'operation' : `operation/${service}`;
 const dueAt = (op: Operation) => op.phase === 'ready' ? op.deadline * 1000 :
   op.phase === 'opening' ? Math.min(op.nextAt ?? 0, op.setupDeadline * 1000, op.deadline * 1000) :
-  !op.invalidated || op.cleanupPending ? op.nextAt ?? 0 : Infinity;
+  op.launchAfterCleanup ? Math.min(op.nextAt ?? 0, op.launchAfterCleanup.deadline * 1000) :
+    !op.invalidated || op.cleanupPending ? op.nextAt ?? 0 : Infinity;
 
 // Reconstructible application credential, never DO metadata. OpenCode Web
 // keeps it across link generations; the origin is configured separately.
@@ -213,7 +280,7 @@ export class SandboxBrowser {
     // Keep retrying invalidation if D1/DO transport is temporarily unavailable.
     op.invalidated = false;
     op.nextAt = Date.now() + 30_000;
-    op.phase = phase; op.error = error; delete op.url;
+    op.phase = phase; op.error = error; delete op.url; delete op.launchAfterCleanup;
     await this.save(op);
     await this.arm();
     op.invalidated = await revokeUserPreview(this.env, op.email, SERVICE_DEFS[op.service ?? 'openchamber'].slot);
@@ -227,7 +294,7 @@ export class SandboxBrowser {
       .first<{ expires_at: number }>();
     return Math.min(op.deadline, record?.expires_at ?? 0);
   }
-  private async stop(op: Operation) {
+  private async stop(op: Operation, wakeForCleanup = false) {
     // Persist intent and revoke access before touching compute. A late installer
     // breadcrumb cannot advance this operation back to register/ready.
     if (op.phase !== 'stopped') {
@@ -256,13 +323,28 @@ export class SandboxBrowser {
         const result = JSON.parse(text) as Record<string, unknown>;
         if (result.stopped !== true || result.operation !== op.operation) fail('invalid_stop_status');
         op.cleanupPending = false;
+      } else if (wakeForCleanup && m.state === 'paused' && m.public !== true) {
+        await wakeV2Sandbox(m, this.env);
       }
       delete op.cleanupError;
     } catch {
       op.cleanupError = 'process_cleanup_pending';
     }
-    op.nextAt = Date.now() + 30_000;
+    op.nextAt = Date.now() + (wakeForCleanup ? 5000 : 30_000);
     await this.save(op);
+  }
+  private async queueSetup(email: string, def: ServiceDef, hash: string, previous: Operation | undefined, restart: boolean) {
+    const deadline = now() + LINK_SECONDS;
+    const op: Operation = { email, service: def.id, operation: crypto.randomUUID(), ownerKeyHash: hash,
+      ...(def.id === 'opencode-web' ? { appAuthVersion: 2 as const } : {}),
+      phase: 'opening', step: 'discover', progress: 'locating_sandbox', deadline,
+      setupDeadline: Math.min(now() + SETUP_SECONDS, deadline), updatedAt: now(), startedAt: now(), restart,
+      previousFailure: previous?.phase === 'failed' ? { at: previous.updatedAt,
+        error: previous.error ?? 'setup_failed', progress: previous.progress,
+        elapsed: Math.max(0, previous.updatedAt - (previous.startedAt ?? previous.updatedAt)) } : previous?.previousFailure };
+    await this.save(op);
+    await this.arm();
+    return response({ phase: op.phase, operation: op.operation }, 202);
   }
   private async view(email: string, service: ServiceId = 'openchamber') {
     const op = await this.state.storage.get<Operation>(operationKey(service));
@@ -271,8 +353,9 @@ export class SandboxBrowser {
     const access = op?.sandboxId ? await activeSandboxCredential(this.env, email, op.sandboxId) : null;
     const validKey = !op || op.step === 'discover' || op.step === 'credentials' || access?.id === op.ownerKeyHash;
     // Control-plane GET only. No readiness probes, file reads, or last-activity writes.
-    const recorded = op?.sandboxId ? await machine(this.env, op.sandboxId) : null;
-    const current = recorded ?? await discover(this.env, email);
+    const recorded = op?.sandboxId && (!daytonaV2(this.env) || op.sandboxId === row.daytona_sandbox_id)
+      ? await machine(this.env, op.sandboxId) : null;
+    const current = recorded ?? await discover(this.env, email, row.daytona_sandbox_id);
     // Chat/API may have replaced a deleted machine since the last managed setup.
     // A confirmed 404 permits passive rediscovery, never inheritance of its app URL.
     if (current && op?.sandboxId && current.id !== op.sandboxId && op.phase !== 'opening') {
@@ -287,11 +370,17 @@ export class SandboxBrowser {
     const deadline = op?.phase === 'ready' ? await this.linkDeadline(op) : op?.deadline;
      const expired = op && ['opening', 'ready'].includes(op.phase) && deadline !== undefined && deadline <= now();
     const ready = op?.phase === 'ready' && !expired && validKey && owned && current.state === 'started';
-    return response({ phase: !op ? 'idle' : !validKey ? 'failed' : expired ? 'expired' : op.phase,
+    const cleaningBeforeLaunch = op?.launchAfterCleanup && op.launchAfterCleanup.deadline > now() &&
+      op.sandboxId === row.daytona_sandbox_id && owned;
+    const canResumeCleanup = daytonaV2(this.env) && op?.phase === 'stopped' && op.invalidated &&
+      op.cleanupPending && op.sandboxId === row.daytona_sandbox_id && owned && current.state === 'paused' && current.public !== true;
+    return response({ phase: !op ? 'idle' : cleaningBeforeLaunch ? 'opening' : !validKey ? 'failed' : expired ? 'expired' : op.phase,
       machine: current ? owned ? current.state : 'unavailable' : 'absent',
-      progress: op?.progress ?? 'unchecked', operation: op?.operation,
+      progress: cleaningBeforeLaunch ? 'starting_sandbox' : op?.progress ?? 'unchecked', operation: op?.operation,
       error: !validKey ? 'credential_changed' : op?.error,
       deadline, url: ready ? op.url : undefined,
+      validate_open: ready && daytonaV2(this.env) ? true : undefined,
+      can_resume_cleanup: canResumeCleanup ? true : undefined,
       // Setup status freshness is explicit; GET never probes the application.
       updated_at: op?.updatedAt, started_at: op?.startedAt,
       heartbeat_at: op?.heartbeatAt, timeline: op?.timeline ?? [], previous_failure: op?.previousFailure,
@@ -301,6 +390,7 @@ export class SandboxBrowser {
 
   async fetch(req: Request): Promise<Response> {
     try {
+      if (this.env.SANDBOX_MIGRATION_READONLY === 'true') return response({ error: 'migration_in_progress' }, 503);
       const u = new URL(req.url);
       const email = req.headers.get('X-BayLeaf-Owner') ?? '';
       if (!email || !this.state.id.equals(this.env.SANDBOX_BROWSER.idFromName(email))) return response({ error: 'denied' }, 403);
@@ -309,13 +399,28 @@ export class SandboxBrowser {
       // by the public /sandbox/browser adapter.
       if (req.method === 'POST' && u.pathname === '/wake-existing') {
         return await this.exclusive(async () => {
-          if (!await getAccountRow(email, this.env)) return response({ error: 'account_required' }, 403);
-          const current = await discover(this.env, email);
+          const row = await getAccountRow(email, this.env);
+          if (!row) return response({ error: 'account_required' }, 403);
+          const current = await discover(this.env, email, row.daytona_sandbox_id);
           if (!current) return response({ state: 'absent' });
           if (!current.id || current.public === true) return response({ error: 'sandbox_unavailable' }, 503);
           const ops = await this.operations();
           // Active setup already owns wake/recovery and must not be interrupted.
-          if (ops.some(op => op.phase === 'opening' && op.setupDeadline > now())) return response({ state: 'opening' });
+          if (ops.some(op => (op.phase === 'opening' && op.setupDeadline > now()) ||
+              (op.launchAfterCleanup?.deadline ?? 0) > now())) return response({ state: 'opening' });
+          if (daytonaV2(this.env) && ['paused', 'stopped', 'started'].includes(current.state)) {
+            if (current.state === 'started') {
+              await refreshActivity(current.id, this.env);
+              return response({ state: 'started' });
+            }
+            if (!await activeSandboxCredential(this.env, email, current.id)) return response({ state: current.state });
+            if (current.state === 'stopped') for (const op of ops) {
+              if (op.phase === 'ready') await this.retire(op, 'stopped');
+            }
+            await wakeV2Sandbox(current, this.env);
+            await this.arm();
+            return response({ state: 'starting' });
+          }
           if (['stopped', 'archived'].includes(current.state)) {
             // Mount before waking, so first attachment never needs to interrupt compute.
             // Login alone does not authorize issuance: app setup does that.
@@ -366,6 +471,10 @@ export class SandboxBrowser {
             const revoked = await revokeUserPreview(this.env, email, def.slot);
             return response({ phase: 'stopped', access_revoked: revoked, cleanup_pending: false }, revoked ? 200 : 503);
           }
+          if (previous.launchAfterCleanup) {
+            delete previous.launchAfterCleanup;
+            await this.save(previous);
+          }
           await this.stop(previous);
           await this.arm();
           return response({ phase: 'stopped', access_revoked: previous.invalidated === true,
@@ -373,11 +482,23 @@ export class SandboxBrowser {
             processes_reaped: previous.processesReaped },
             previous.invalidated && !previous.cleanupPending ? 200 : 202);
         }
-        if (previous?.cleanupPending || (previous?.phase === 'stopped' && !previous.invalidated)) {
+        const recoverCleanup = daytonaV2(this.env) && previous?.phase === 'stopped' &&
+          previous.invalidated && previous.sandboxId && previous.sandboxId === row.daytona_sandbox_id &&
+          (previous.cleanupPending || previous.launchAfterCleanup);
+        if (!recoverCleanup && (previous?.cleanupPending || (previous?.phase === 'stopped' && !previous.invalidated))) {
           return response({ error: 'process_cleanup_pending' }, 409);
         }
-        const other = (await this.operations()).find(op => (op.service ?? 'openchamber') !== def.id && op.phase === 'opening');
+        const other = (await this.operations()).find(op => (op.service ?? 'openchamber') !== def.id &&
+          (op.phase === 'opening' || (op.launchAfterCleanup?.deadline ?? 0) > now()));
         if (other) return response({ error: 'service_busy', service: other.service ?? 'openchamber' }, 409);
+        if (recoverCleanup) {
+          if ((previous.launchAfterCleanup?.deadline ?? 0) <= now()) {
+            previous.launchAfterCleanup = { deadline: now() + RESUME_SECONDS, restart: u.pathname === '/restart' };
+            await this.schedule(previous, Date.now());
+            await this.arm();
+          }
+          return response({ phase: 'opening', operation: previous.operation }, 202);
+        }
         // Repeated clicks during setup converge on one persisted operation.
         if (previous?.phase === 'opening' && previous.setupDeadline > now() && previous.deadline > now()) {
           return response({ phase: previous.phase, operation: previous.operation }, 202);
@@ -386,20 +507,21 @@ export class SandboxBrowser {
         const hash = access?.id ?? row.account_generation;
         if (u.pathname === '/start' && previous?.phase === 'ready' && previous.deadline > now() && previous.ownerKeyHash === hash && previous.sandboxId && await this.linkDeadline(previous) > now()) {
           const m = await machine(this.env, previous.sandboxId);
-          if (m?.state === 'started' && m.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] === email) return this.view(email, def.id);
+          if (m?.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] === email) {
+            if (!daytonaV2(this.env) && m.state === 'started') return this.view(email, def.id);
+            if (daytonaV2(this.env) && m.id === row.daytona_sandbox_id && previous.bootId) {
+              if (m.state === 'started' && await sandboxBootId(this.env, m.id) === previous.bootId) return this.view(email, def.id);
+              if (['paused', 'pausing', 'starting'].includes(m.state)) {
+                previous.phase = 'opening'; previous.step = 'verify-resume'; previous.progress = 'starting_sandbox';
+                previous.setupDeadline = Math.min(now() + RESUME_SECONDS, previous.deadline);
+                await this.schedule(previous, Date.now());
+                await this.arm();
+                return response({ phase: 'opening', operation: previous.operation }, 202);
+              }
+            }
+          }
         }
-        // Link lifetime is independent of compute and the bounded installer.
-        const deadline = now() + LINK_SECONDS;
-        const op: Operation = { email, service: def.id, operation: crypto.randomUUID(), ownerKeyHash: hash,
-          ...(def.id === 'opencode-web' ? { appAuthVersion: 2 as const } : {}),
-          phase: 'opening', step: 'discover', progress: 'locating_sandbox', deadline,
-          setupDeadline: Math.min(now() + SETUP_SECONDS, deadline), updatedAt: now(), startedAt: now(), restart: u.pathname === '/restart',
-          previousFailure: previous?.phase === 'failed' ? { at:previous.updatedAt,
-            error:previous.error ?? 'setup_failed', progress:previous.progress,
-            elapsed:Math.max(0,previous.updatedAt - (previous.startedAt ?? previous.updatedAt)) } : previous?.previousFailure };
-        await this.save(op);
-        await this.arm();
-        return response({ phase: op.phase, operation: op.operation }, 202);
+        return this.queueSetup(email, def, hash, previous, u.pathname === '/restart');
       });
     } catch {
       // Provider errors can contain credentials/URLs. Never log or echo them.
@@ -409,6 +531,10 @@ export class SandboxBrowser {
 
   async alarm() {
     await this.exclusive(async () => {
+      if (this.env.SANDBOX_MIGRATION_READONLY === 'true') {
+        await this.state.storage.setAlarm(Date.now() + 60_000);
+        return;
+      }
       // One alarm for the owner. Retire due links and advance at most one setup.
       await this.state.storage.setAlarm(Date.now() + 15_000);
       try {
@@ -429,7 +555,26 @@ export class SandboxBrowser {
       // Persist retry intent before side effects, including after an eviction.
       await this.schedule(op, Date.now() + 15_000);
       try {
-        if (op.phase === 'stopped' && op.cleanupPending) { await this.stop(op); return; }
+        if (op.phase === 'stopped' && (op.cleanupPending || op.launchAfterCleanup)) {
+          const launch = op.launchAfterCleanup;
+          const owner = launch && launch.deadline > now() && daytonaV2(this.env) && browserEnabled(this.env)
+            ? await getAccountRow(op.email, this.env) : null;
+          if (owner && op.sandboxId === owner.daytona_sandbox_id && launch) {
+            await this.stop(op, true);
+            if (!op.cleanupPending) {
+              const credential = await activeSandboxCredential(this.env, op.email, op.sandboxId!);
+              await this.queueSetup(op.email, def, credential?.id ?? owner.account_generation, op,
+                launch.restart && def.driver !== 'computeruse');
+            }
+          } else {
+            if (launch) {
+              delete op.launchAfterCleanup;
+              await this.save(op);
+            }
+            await this.stop(op);
+          }
+          return;
+        }
         const row = await getAccountRow(op.email, this.env);
         const access = op.sandboxId ? await activeSandboxCredential(this.env, op.email, op.sandboxId) : null;
         if (!browserEnabled(this.env) || !row ||
@@ -448,36 +593,36 @@ export class SandboxBrowser {
 
         if (op.step === 'discover') {
           await revokeUserPreview(this.env, op.email, def.slot);
-          let m = await discover(this.env, op.email);
+          let m = await discover(this.env, op.email, row.daytona_sandbox_id);
           if (!m) {
             // Desktop attaches to an existing machine only; it never creates one.
             if (def.driver === 'computeruse') return await this.retire(op, 'failed', 'sandbox_missing');
-            // Never automatically retry an ambiguous POST. A deliberate retry
-            // re-discovers the label before another create attempt.
-            if (op.creationAttempted) await this.state.storage.put('creationUncertain', true);
-            if (await this.state.storage.get('creationUncertain')) return await this.retire(op, 'failed', 'creation_uncertain');
-            await this.state.storage.put('creationUncertain', true);
-            op.creationAttempted = true;
-            op.progress = 'creating_sandbox'; await this.save(op);
-            let created: Response;
-            try {
-              created = await platform(this.env, '/sandbox', 'POST', persistentSandboxParams(op.email, this.env));
-            } catch { return await this.retire(op, 'failed', 'creation_uncertain'); }
-            if (!created.ok) {
-              // Daytona documents 401 as missing/invalid credentials and 403 as
-              // lack of permission for the operation (SDK Errors reference).
-              // These authorization rejections cannot create compute. Its create
-              // OpenAPI has no other failure contract: do not guess from a 400,
-              // 409, 429, redirect, or 5xx that no side effect occurred.
-              if ([401, 403].includes(created.status)) {
-                op.creationAttempted = false;
-                await this.save(op);
-                await this.state.storage.delete('creationUncertain');
+            if (daytonaV2(this.env)) {
+              op.progress = 'creating_sandbox'; await this.save(op);
+              m = await createPersistentSandbox(op.email, this.env).catch(() => fail('creation_failed'));
+            } else {
+              // v0 has no idempotency key. Only documented auth rejections
+              // prove it did not create compute.
+              if (op.creationAttempted) await this.state.storage.put('creationUncertain', true);
+              if (await this.state.storage.get('creationUncertain')) return await this.retire(op, 'failed', 'creation_uncertain');
+              await this.state.storage.put('creationUncertain', true);
+              op.creationAttempted = true;
+              op.progress = 'creating_sandbox'; await this.save(op);
+              let created: Response;
+              try {
+                created = await platform(this.env, '/sandbox', 'POST', persistentSandboxParams(op.email, this.env));
+              } catch { return await this.retire(op, 'failed', 'creation_uncertain'); }
+              if (!created.ok) {
+                if ([401, 403].includes(created.status)) {
+                  op.creationAttempted = false;
+                  await this.save(op);
+                  await this.state.storage.delete('creationUncertain');
+                }
+                await created.body?.cancel();
+                return await this.retire(op, 'failed', [401, 403].includes(created.status) ? 'creation_failed' : 'creation_uncertain');
               }
-              await created.body?.cancel();
-              return await this.retire(op, 'failed', [401, 403].includes(created.status) ? 'creation_failed' : 'creation_uncertain');
+              m = await created.json() as Machine;
             }
-            m = await created.json() as Machine;
           }
           if (!m?.id || m.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] !== op.email) fail('ownership_mismatch');
           await this.state.storage.delete('creationUncertain');
@@ -489,39 +634,57 @@ export class SandboxBrowser {
             }
           }
           op.sandboxId = m.id; op.step = 'credentials'; op.progress = 'starting_sandbox';
-          await this.env.DB.prepare('UPDATE user_keys SET daytona_sandbox_id=? WHERE email=?')
-            .bind(m.id, op.email).run();
+          const bound = await this.env.DB.prepare('UPDATE user_keys SET daytona_sandbox_id=? WHERE email=? AND (daytona_sandbox_id IS ? OR daytona_sandbox_id=?)')
+            .bind(m.id, op.email, row.daytona_sandbox_id, m.id).run();
+          if (bound.meta.changes !== 1) fail('ownership_mismatch');
         } else {
           const id = op.sandboxId!;
           const m = await machine(this.env, id);
           if (!m || m.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] !== op.email) throw new Problem('sandbox_missing');
           if (m.public === true) fail('public_sandbox');
           if (op.step === 'credentials') {
-            if (op.creationAttempted && m.state === 'started' && !access) {
+            if (!daytonaV2(this.env) && op.creationAttempted && m.state === 'started' && !access) {
               // Newly-created, empty machines need one stop/start for first mount.
               const stopped = await platform(this.env, `/sandbox/${encodeURIComponent(id)}/stop`, 'POST');
               if (!stopped.ok) fail('stop_failed');
               await stopped.body?.cancel();
-            } else if (!['stopping','starting','creating','pending_build','pulling_snapshot'].includes(m.state)) {
+            } else if (!['stopping','starting','creating','pending_build','pulling_snapshot','pausing'].includes(m.state)) {
               const credential = await ensureSandboxCredential(this.env, op.email, id).catch(error => {
                 const code = error instanceof Error ? error.message : '';
+                if (daytonaV2(this.env) && code === 'sandbox_secret_unavailable') return fail('toolbox_unavailable');
                 return fail(['credential_migration_requires_stop','existing_secret_mounts','sandbox_credential_setup_failed'].includes(code)
                   ? code : 'sandbox_access_unavailable');
               });
               op.ownerKeyHash = credential.id;
               op.step = 'wake'; op.progress = 'starting_sandbox';
             }
+          } else if (op.step === 'verify-resume') {
+            if (!daytonaV2(this.env) || row.daytona_sandbox_id !== id) fail('sandbox_missing');
+            if (m.state === 'paused') {
+              await wakeV2Sandbox(m, this.env).catch(() => fail('start_failed'));
+            } else if (m.state === 'started' || m.state === 'stopped') {
+              if (m.state === 'started' && await sandboxBootId(this.env, id) === op.bootId) {
+                op.phase = 'ready'; op.progress = 'ready';
+              } else {
+                await this.queueSetup(op.email, def, op.ownerKeyHash, op, false);
+                return;
+              }
+            } else if (!['starting', 'pausing', 'stopping'].includes(m.state)) fail('sandbox_error');
           } else if (op.step === 'wake') {
             if (m.state === 'started') {
+              if (daytonaV2(this.env)) op.bootId = await sandboxBootId(this.env, id);
               // OpenCode needs the exact private origin on its initial argv.
               op.step = def.id === 'opencode-web' ? 'register' : 'prepare';
               op.progress = def.id === 'opencode-web' ? 'registering_preview' : 'preparing_setup';
             }
-            else if (['stopped', 'archived'].includes(m.state) && !op.wakeRequested) {
+            else if (['stopped', 'archived', 'paused'].includes(m.state) && !op.wakeRequested) {
               op.wakeRequested = true; await this.save(op);
-              const r = await platform(this.env, `/sandbox/${encodeURIComponent(id)}/start`, 'POST');
-              if (!r.ok) fail('start_failed');
-              await r.body?.cancel();
+              if (daytonaV2(this.env)) await wakeV2Sandbox(m, this.env).catch(() => fail('start_failed'));
+              else {
+                const r = await platform(this.env, `/sandbox/${encodeURIComponent(id)}/start`, 'POST');
+                if (!r.ok) fail('start_failed');
+                await r.body?.cancel();
+              }
             } else if (m.state === 'error') fail('sandbox_error');
           } else if (m.state !== 'started') {
             fail('sandbox_stopped_during_setup');
@@ -530,12 +693,14 @@ export class SandboxBrowser {
             if (op.restart) op.processesReaped = await stopDesktop(this.env, id, def);
             op.step = 'inspect'; op.progress = 'starting_desktop'; op.launches = 1;
             await this.save(op); // A crash here resumes via inspect, then restart.
-            if (desktopActive(await computerUse(this.env, id, 'start')) &&
-                desktopActive(await computerUse(this.env, id, 'status'))) {
+            const started = await computerUse(this.env, id, 'start');
+            if ((daytonaV2(this.env) || desktopActive(started)) && desktopActive(await computerUse(this.env, id, 'status'))) {
+              if (daytonaV2(this.env)) await execute(this.env, id, ensureDesktopBridge);
               op.step = 'register'; op.progress = 'registering_preview';
             }
           } else if (def.driver === 'computeruse' && op.step === 'inspect') {
             if (desktopActive(await computerUse(this.env, id, 'status'))) {
+              if (daytonaV2(this.env)) await execute(this.env, id, ensureDesktopBridge);
               op.step = 'register'; op.progress = 'registering_preview';
             } else if ((op.launches ?? 0) >= 3) fail('desktop_not_ready');
             else {
@@ -550,6 +715,9 @@ export class SandboxBrowser {
               await this.schedule(op, Date.now() + 1000);
               return;
             }
+            if (def.credential && access && daytonaV2(this.env) && !await v2CredentialApplied(this.env, access)) {
+              fail('toolbox_unavailable');
+            }
             await execute(this.env, id, `bash -c 'umask 077; mkdir -p ${ROOT}/credentials; chmod 700 ${ROOT} ${ROOT}/credentials'`);
             await upload(this.env, id, ROOT, 'setup.next.py', setupSource);
             // Parent-owned shared CLI; deliberate setup partitions independently
@@ -557,16 +725,17 @@ export class SandboxBrowser {
             await upload(this.env, id, ROOT, 'cli-assets.json', JSON.stringify(sandboxCliAssets));
             await upload(this.env, id, ROOT, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.setupDeadline,
               restart: op.restart, inboxes_enabled: inboxesEnabled, rooms_enabled: roomsEnabled,
+              ...(def.credential && daytonaV2(this.env) ? { secret_env: access?.secret_name } : {}),
               ...(def.id === 'opencode-web' && op.url ? { preview_origin: new URL(op.url).origin } : {}) }));
             if (def.credential) {
-              if (!access?.placeholder) fail('sandbox_access_unavailable');
-              await upload(this.env, id, ROOT, 'credentials/incoming', access!.placeholder!);
+              if (!access || (daytonaV2(this.env) ? !v2SecretName(access.secret_name) : !access.placeholder)) fail('sandbox_access_unavailable');
+              if (access?.placeholder && !daytonaV2(this.env)) await upload(this.env, id, ROOT, 'credentials/incoming', access.placeholder);
             }
             if (managedAppAuth(def.slot)) {
               await upload(this.env, id, ROOT, 'credentials/app-secret', await managedAppSecret(this.env, op));
             }
             if (def.id === 'jupyter') await upload(this.env, id, ROOT, 'jupyter-adapter.py', jupyterSource);
-            await execute(this.env, id, `bash -c '${def.credential ? `chmod 600 ${ROOT}/credentials/incoming; ` : ''}mv ${ROOT}/setup.next.py ${ROOT}/setup.py; mv ${ROOT}/request.next.json ${ROOT}/request.json'`);
+            await execute(this.env, id, `bash -c '${def.credential && !daytonaV2(this.env) ? `chmod 600 ${ROOT}/credentials/incoming; ` : ''}mv ${ROOT}/setup.next.py ${ROOT}/setup.py; mv ${ROOT}/request.next.json ${ROOT}/request.json'`);
             op.step = 'inspect'; op.progress = 'checking'; op.launches = 1;
             await this.save(op); // A crash here resumes via inspect, then relaunch.
             await execute(this.env, id, launch(op.operation, def));
@@ -623,9 +792,8 @@ export class SandboxBrowser {
               op.url = 'landing' in def ? new URL(def.landing, url).href : url;
               op.deadline = Math.min(op.deadline, existing.expires_at);
             } else {
-              const r = await platform(this.env, `/sandbox/${encodeURIComponent(id)}/ports/${def.port}/signed-preview-url?expiresInSeconds=${Math.max(1, op.deadline - now())}`);
-              if (!r.ok) fail('preview_unavailable');
-              const signed = await r.json() as { url: string };
+              const signed = await createSignedPreview(id, def.port, this.env, Math.max(1, op.deadline - now()));
+              if (!signed) return fail('preview_unavailable');
               const preview = await registerBrowserPreview(this.env, op.email, signed.url, op.deadline, op.ownerKeyHash, def.slot,
                 managedAppAuth(def.slot) ? await managedAppSecret(this.env, op) : undefined);
               if (preview instanceof Response) fail('preview_unavailable');
@@ -644,7 +812,8 @@ export class SandboxBrowser {
         }
         op.transientFailures = 0;
         await this.save(op);
-        await this.schedule(op, op.phase === 'ready' ? op.deadline * 1000 : Date.now() + (op.step === 'inspect' ? 10_000 : 1000));
+        const delay = op.step === 'inspect' ? 10_000 : op.step === 'verify-resume' ? 5000 : 1000;
+        await this.schedule(op, op.phase === 'ready' ? op.deadline * 1000 : Date.now() + delay);
       } catch (error) {
         // A started machine's Toolbox can lag behind its control-plane status.
         // Replaying prepare replaces staging files; inspect reconciles an ambiguous launch.

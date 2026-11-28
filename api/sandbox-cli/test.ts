@@ -40,6 +40,7 @@ const rejects = async (fn: () => Promise<unknown>, code: string) => {
 };
 try {
   assert.equal(await credential({ BAYLEAF_API_KEY: key }, dir), key);
+  assert.equal(await credential({ BAYLEAF_API_KEY: 'dtns_synthetic_v2' }, dir), 'dtns_synthetic_v2');
   await rejects(() => credential({}, dir), 'credential_missing_or_invalid');
   await rejects(() => credential({ BAYLEAF_API_KEY: 'bad' }, dir), 'credential_missing_or_invalid');
   const folder = join(dir, '.local/share/bayleaf/jupyter/credentials');

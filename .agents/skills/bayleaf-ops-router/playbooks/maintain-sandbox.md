@@ -63,8 +63,10 @@ config, and deployment. There is no npm publication workflow for the plugin.
    state and private preview. Test in an isolated HOME/XDG root, not the operator's service.
    `scripts/test-openchamber-onboarding.py --prefix <global-prefix>` verifies the
    current upstream installer, discovery, and update-prefix ownership. Read the
-   upstream module before changing this bridge: 2.1.1's web install action refuses
-   a completely absent OpenCode, requiring direct invocation of its installer.
+   upstream module before changing this bridge: the web install action can
+   refuse a completely absent OpenCode, requiring direct invocation of its
+   installer. Locate it in the installed package; newer releases publish the
+   compiled server under `build/`, while older installs use `server/`.
    For application releases without an API digest, pin the publisher's checksum;
    never relax verification.
 

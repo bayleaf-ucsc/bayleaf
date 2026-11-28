@@ -14,6 +14,7 @@ const sessionCookie = '__Host-bayleaf-sandbox-session=synthetic-session';
 const transactionCookie = '__Host-bayleaf-sandbox-transaction=synthetic-verifier';
 const calls = [], background = [];
 let failWake = false, authenticated = true, validExchange = true;
+let managedReply;
 const management = {
   async beginLogin(input) { calls.push(['begin', input]); return { flow: 'flow', authorizeUrl: 'https://api.bayleaf.dev/auth/services/authorize?flow=flow' }; },
   async proveLogin(input) { calls.push(['prove', input]); return { authorizeUrl: 'https://api.bayleaf.dev/auth/services/authorize?flow=flow' }; },
@@ -27,7 +28,7 @@ const management = {
     if (input.operation === 'wake-existing' && failWake) throw Error('synthetic unavailable');
     if (input.operation !== 'wake-existing' && !['openchamber', 'opencode-web', 'code-server', 'dufs', 'ttyd'].includes(input.service))
       return { status: 400, body: { error: 'invalid_operation' } };
-    return { status: 200, body: { phase: 'idle', machine: 'absent' } };
+    return managedReply ?? { status: 200, body: { phase: 'idle', machine: 'absent' } };
   },
 };
 async function request(path, { method = 'GET', cookie, headers = {}, host = origin, browserArrivalsEnabled } = {}) {
@@ -213,9 +214,9 @@ for(const [snapshot,expected] of [
   assert.equal(!element('#openchamber-stop').hidden,expected,'stop visibility for '+JSON.stringify(snapshot));
 }
 // Execute Desktop controls to prove page loads stay passive and Start stays explicit.
-function desktopPage(initial) {
-  const elements=new Map(), fetches=[], frames=[], timers=[];
-  const page={snapshot:initial,elements,fetches,frames,timers};
+function desktopPage(initial, {service='desktop', blockPopup=false}={}) {
+  const elements=new Map(), fetches=[], frames=[], timers=[], tabs=[], events=[];
+  const page={snapshot:initial,elements,fetches,frames,timers,tabs,events};
   const element=id=>{
     if(!elements.has(id)){const listeners={};elements.set(id,{hidden:true,disabled:false,dataset:{},textContent:'',children:[],attributes:{},listeners,focused:0,
       setAttribute(k,v){this.attributes[k]=v;},removeAttribute(k){delete this.attributes[k];delete this.href;},
@@ -223,13 +224,26 @@ function desktopPage(initial) {
     return elements.get(id);
   };
   page.element=element;
-  const root={dataset:{service:'desktop',endpoint:'/services/desktop'},querySelector:element};
+  const root={dataset:{service,endpoint:'/services/'+service},querySelector:element};
   runInNewContext(controls,{URL,Date,document:{querySelectorAll:()=>[root],getElementById:id=>element('#'+id),
       createElement:tag=>{const f={tag,attributes:{},setAttribute(k,v){this.attributes[k]=v;}};frames.push(f);return f;}},
-    window:{addEventListener(){}},setTimeout(fn){timers.push(fn);},clearTimeout(){},setInterval(){},
+    window:{addEventListener(){},open(url,target){
+      events.push('open');
+      assert.equal(url,'about:blank');assert.equal(target,'_blank');
+      if(blockPopup)return null;
+      const tab={closed:false,opener:{},document:{body:{},head:{append(){}},createElement:()=>({})},
+        location:{replace(url){assert.equal(tab.opener,null);tab.url=url;}},
+        close(){this.closed=true;}};
+      tabs.push(tab);
+      return tab;
+    }},setTimeout(fn){timers.push(fn);},clearTimeout(){},setInterval(){},
     fetch:async(path,init={})=>{fetches.push([path,init]);
+      events.push(path);
       if(path.endsWith('/embed'))return {ok:true,status:200,json:async()=>({url:'https://owner-private-000000000000000000000000.bayleaf-proxies.dev/__preview/embed?code='+'a'.repeat(64)})};
-      if(path.endsWith('/start'))page.snapshot={phase:'opening',progress:'starting_desktop',machine:'started',operation:'synthetic'};
+      if(path.endsWith('/start')) {
+        if(page.startReply)return page.startReply();
+        page.snapshot={phase:'opening',progress:'starting_desktop',machine:'started',operation:'synthetic'};
+      }
       if(path.endsWith('/stop'))page.snapshot={phase:'stopped',access_revoked:true,cleanup_pending:false};
       return {ok:true,status:200,json:async()=>page.snapshot};}});
   return page;
@@ -245,6 +259,7 @@ const desktopUrl='https://owner-private-000000000000000000000000.bayleaf-proxies
   assert.deepEqual(page.fetches.map(([path])=>path),['/services/desktop/status']);
   assert.equal(el('#desktop-open').hidden,false);
   assert.equal(el('#desktop-open').href,desktopUrl);
+  assert.equal(el('#desktop-open-checked').hidden,true);
   assert.equal(embeds(page).length,0);
   assert.equal(page.frames.length,0);
   await el('#desktop-stop').listeners.click();
@@ -273,5 +288,95 @@ const desktopUrl='https://owner-private-000000000000000000000000.bayleaf-proxies
   assert.equal(page.frames.length,0);
   assert.equal(el('#desktop-open').hidden,false);
   assert.equal(el('#desktop-open').href,desktopUrl);
+}
+const v2Ready={phase:'ready',machine:'started',operation:'old',url:desktopUrl,validate_open:true};
+const verifiedUrl=desktopUrl.replace('/vnc.html','/vnc.html?autoconnect=true&path=websockify');
+const reply=(body,status=200)=>({ok:status<400,status,json:async()=>body});
+{
+  for(const body of [v2Ready,{phase:'stopped',cleanup_pending:true,can_resume_cleanup:true}]) {
+    managedReply={status:200,body};
+    const response=await request('/services/openchamber/status',{cookie:sessionCookie});
+    assert.deepEqual(await response.json(),body,'adapter preserves v2 status capabilities');
+  }
+  managedReply=undefined;
+}
+{
+  const page=desktopPage(v2Ready);
+  page.startReply=()=>reply({...v2Ready,url:verifiedUrl});
+  await settle();
+  const el=page.element;
+  assert.deepEqual(page.events,['/services/desktop/status'],'ready status never performs validation');
+  assert.equal(el('#desktop-open').href,undefined);
+  assert.equal(el('#desktop-open').hidden,true);
+  assert.equal(el('#desktop-open-checked').hidden,false);
+  const launched=el('#desktop-open-checked').listeners.click();
+  assert.deepEqual(page.events.slice(-2),['open','/services/desktop/start'],'reserve the popup synchronously');
+  assert.equal(page.tabs[0].url,undefined,'never navigate to the passive URL while awaiting POST');
+  await launched;
+  assert.equal(page.tabs[0].url,verifiedUrl,'preserve the server-provided Desktop landing URL');
+  assert.equal(embeds(page).length,0);
+}
+{
+  const page=desktopPage(v2Ready,{service:'opencode-web'});
+  const opening={phase:'opening',machine:'started',operation:'replacement'};
+  page.startReply=()=>{page.snapshot=opening;return reply(opening,202);};
+  await settle();
+  await page.element('#opencode-web-open-checked').listeners.click();
+  assert.equal(page.tabs[0].url,undefined);
+  page.snapshot={...v2Ready,operation:opening.operation,url:'https://new-preview.example.test/'};
+  page.timers.at(-1)();
+  await settle();
+  assert.equal(page.tabs[0].url,page.snapshot.url,'wait for the replacement from this launch');
+  assert.deepEqual(page.fetches.map(([path,init])=>[path,init.method??'GET']),[
+    ['/services/opencode-web/status','GET'],['/services/opencode-web/start','POST'],
+    ['/services/opencode-web/status','GET'],['/services/opencode-web/status','GET'],
+  ]);
+}
+{
+  const page=desktopPage(v2Ready,{blockPopup:true});
+  page.startReply=()=>reply({...v2Ready,url:verifiedUrl});
+  await settle();
+  assert.equal(page.element('#desktop-open').hidden,true);
+  await page.element('#desktop-open-checked').listeners.click();
+  assert.equal(page.element('#desktop-open').hidden,false);
+  assert.equal(page.element('#desktop-open').href,verifiedUrl,'blocked popup falls back to a verified native link');
+  page.timers.at(-1)();
+  assert.equal(page.element('#desktop-open').hidden,true,'native fallback expires');
+  assert.equal(page.element('#desktop-open-checked').hidden,false);
+}
+{
+  const page=desktopPage(v2Ready);
+  page.startReply=()=>reply({error:'lifecycle_unavailable'},503);
+  await settle();
+  await page.element('#desktop-open-checked').listeners.click();
+  assert.equal(page.tabs[0].closed,true);
+  assert.equal(page.element('#desktop-open').hidden,true,'failed validation cannot expose the old link');
+}
+{
+  const page=desktopPage(v2Ready);
+  const opening={phase:'opening',machine:'started',operation:'replacement'};
+  page.startReply=()=>{page.snapshot=opening;return reply(opening,202);};
+  await settle();
+  await page.element('#desktop-open-checked').listeners.click();
+  assert.equal(page.tabs[0].closed,false);
+  await page.element('#desktop-stop').listeners.click();
+  assert.equal(page.tabs[0].closed,true,'Stop closes only the pending tab and submits the no-wake action');
+}
+for(const canResume of [true,false]) {
+  const page=desktopPage({phase:'stopped',machine:'paused',cleanup_pending:true,access_revoked:true,
+    ...(canResume?{can_resume_cleanup:true}:{})});
+  await settle();
+  const el=page.element;
+  assert.equal(el('#desktop-start').hidden,!canResume);
+  assert.equal(el('#desktop-stop').hidden,false);
+  assert.deepEqual(page.events,['/services/desktop/status']);
+  if(canResume) {
+    assert.match(el('#desktop-start').textContent,/^Resume to finish cleanup/);
+    await el('#desktop-start').listeners.click();
+    assert.deepEqual(page.events.slice(1),['/services/desktop/start','/services/desktop/status']);
+  }
+  await el('#desktop-stop').listeners.click();
+  assert.equal(page.events.at(-2),'/services/desktop/stop','Stop issues only the no-wake action');
+  assert.equal(page.tabs.length,0);
 }
 console.log('PASS sandbox overview, host-only login, CSRF, escaped identity, one-shot wake, passive reads, service dispatch, logout, no-wake stop controls and static hero');

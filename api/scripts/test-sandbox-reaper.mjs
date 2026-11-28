@@ -128,5 +128,50 @@ try {
   setup([machine('old')]); inventory = [{ items: [machine('old')], nextCursor: '1' }, {}];
   await assert.rejects(reapInactiveSandboxes(env, now), /inventory invalid/);
   assert.equal(mutations().length, 0);
+
+  // Import writes a new provider clock. Preserve the v0 activity until a
+  // v2 observation advances beyond the cutover baseline.
+  const v2id = 'sbx_imported';
+  const v2machine = { id: v2id, status: 'paused', labels: { 'chat.bayleaf.dev': 'synthetic@ucsc.edu' },
+    lifecycle_policy: { last_activity_at: new Date(now - 1000).toISOString() } };
+  let deleted = false, clearCount = 0, cachedIds = [];
+  const v2Env = { ...env, DAYTONA_API_VERSION: '2',
+    DB: {
+      prepare(sql) {
+        return { bind: () => ({
+          first: async () => ({ source_activity_ms: cutoff, baseline_activity_ms: now - 1000 }),
+          run: async () => ({}),
+        }), all: async () => ({ results: cachedIds.map(id => ({ id })) }) };
+      },
+      batch: async statements => { assert.equal(statements.length, 2); clearCount++; },
+    } };
+  globalThis.fetch = async (url, options) => {
+    const u = new URL(url);
+    assert.equal(u.host, 'api.daytona.com');
+    if (u.pathname === '/sandboxes/search') return Response.json({ sandboxes: [{ id: v2id }], next_cursor: null });
+    assert.equal(u.pathname, `/sandboxes/${v2id}`);
+    if (options.method === 'DELETE') {
+      deleted = true;
+      return new Response(null, { status: 202 });
+    }
+    return deleted ? new Response(null, { status: 404 }) : Response.json(v2machine);
+  };
+  report = await reapInactiveSandboxes(v2Env, now);
+  assert.equal(report.candidates, 1); assert.equal(report.dryRun, true); assert.equal(deleted, false);
+  v2machine.lifecycle_policy.last_activity_at = new Date(now).toISOString();
+  report = await reapInactiveSandboxes(v2Env, now);
+  assert.equal(report.candidates, 0);
+  v2machine.lifecycle_policy.last_activity_at = new Date(now - 1000).toISOString();
+  report = await reapInactiveSandboxes({ ...v2Env, DAYTONA_V2_REAPER_DELETE: 'true' }, now);
+  assert.equal(report.deleted, 1); assert.equal(clearCount, 1);
+  // The search index may still show a sandbox after DELETE was accepted.
+  // Its authoritative deleting state is pending; 404 clears the exact binding
+  // even if search still advertises the deleted ID.
+  cachedIds = [v2id]; deleted = false; v2machine.status = 'deleting';
+  report = await reapInactiveSandboxes({ ...v2Env, DAYTONA_V2_REAPER_DELETE: 'true' }, now);
+  assert.equal(report.pending, 1); assert.equal(clearCount, 1);
+  deleted = true;
+  report = await reapInactiveSandboxes({ ...v2Env, DAYTONA_V2_REAPER_DELETE: 'true' }, now);
+  assert.equal(report.pending, 0); assert.equal(clearCount, 2);
   console.log('Sandbox reaper checks passed');
 } finally { globalThis.fetch = originalFetch; }

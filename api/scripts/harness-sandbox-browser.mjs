@@ -8,6 +8,7 @@ import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions, WebSocketPair, Response as WorkerResponse } from 'miniflare';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const v2 = process.argv.includes('--daytona-v2');
 const api = 'https://api.example.test';
 const email = 'owner@example.test';
 const secret = 'synthetic-oidc-secret';
@@ -91,6 +92,8 @@ let failCreate=false, creationRequests=0, rejectCreate=0;
 let computerUse=[], desktopUp=false, desktopCasing='pascal', desktopStartFails=false, registeredAtDesktopStop;
 let jupyterAuth, ttydAuth, opencodeAuth, wrongOpencodeOrigin=false, stopFails=false, stops=0;
 const machine = () => ({ id: machineId, state, memory, public: isPublic, labels: { 'synthetic-chat': email } });
+let bootId = '11111111-2222-4333-8444-555555555555';
+let mountedSecrets = [];
 const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
   name: 'browser-harness', modules: true, script: bundle.outputFiles[0].text,
   compatibilityDate: '2025-01-31', compatibilityFlags: ['nodejs_compat'], d1Databases: ['DB'],
@@ -107,12 +110,66 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
     RECOMMENDED_MODEL:'synthetic/model',OPENCODE_CURATED_MODELS:'synthetic/model',
     DAYTONA_PROXY_URL: 'https://toolbox.example.test', DAYTONA_API_KEY: 'synthetic-daytona-key',
     DAYTONA_DEPLOYMENT_LABEL: 'synthetic-chat', DAYTONA_AUTO_DELETE_MINUTES: '-1',
+    ...(v2 ? { DAYTONA_API_VERSION: '2', PREVIEWS_V2_UPSTREAM_SUFFIXES: '.preview.example.test' } : {}),
   },
   outboundService: async req => {
     const u = new URL(req.url);
     if (u.hostname==='openrouter.ai') return Response.json({data:u.pathname.endsWith('/models')?
       [{id:'synthetic/model',name:'Synthetic model',pricing:{prompt:'0.000001',completion:'0.000002'}}]:
       {limit:5,limit_remaining:3.75,limit_reset:'daily',usage:30,usage_daily:1.25}});
+    if (v2 && u.hostname === 'api.daytona.com') {
+      assert.equal(req.headers.get('Authorization'), 'Bearer synthetic-daytona-key');
+      const path = `/sandboxes/${machineId}`;
+      if (u.pathname === path) return Response.json({
+        id: machineId, status: state, labels: machine().labels, persistent: true, memory_max_mib: 4096,
+        toolbox_proxy_url: 'https://proxy.region.daytona.app/toolbox',
+      });
+      if (u.pathname === `${path}/resume` && req.method === 'POST') {
+        assert.equal(state, 'paused'); wakes++; state = 'running';
+        return new Response(null, { status: 202 });
+      }
+      if (u.pathname === `${path}/secrets` && req.method === 'GET') {
+        return Response.json({ secrets: mountedSecrets, status: 'applied' }, { headers: { ETag: '"1"' } });
+      }
+      if (u.pathname === `${path}/secrets` && req.method === 'PUT') {
+        assert.equal(req.headers.get('If-Match'), '"1"');
+        ({ secrets: mountedSecrets } = await req.json());
+        assert(mountedSecrets.every(name => vault.has(name)));
+        return new Response(null, { status: 202 });
+      }
+      if (u.pathname.startsWith('/secrets/') && req.method === 'PUT') {
+        const name = u.pathname.split('/').at(-1), body = await req.json();
+        assert.deepEqual(body.allowed_domains, ['api.bayleaf.dev']);
+        vault.set(name, true);
+        return Response.json({ name, allowed_domains: body.allowed_domains }, { status: 201 });
+      }
+      if (u.pathname === `${path}/ports/6080/signed-preview-urls` && req.method === 'POST') {
+        previewCalls++;
+        return Response.json({ url: 'https://6080-synthetic.preview.example.test/' });
+      }
+    }
+    if (v2 && u.hostname === 'proxy.region.daytona.app') {
+      assert.equal(state, 'running', 'Toolbox must never run on paused compute');
+      const path = `/toolbox/${machineId}`;
+      if (u.pathname === `${path}/processes`) {
+        const { argv } = await req.json();
+        let output = '';
+        if (argv[2] === 'cat /proc/sys/kernel/random/boot_id') output = `${bootId}\n`;
+        else assert.match(argv[2], /websockify/);
+        executions++;
+        return Response.json({ id: 'process', exitCode: 0, logs: { frames: [{ data: output }], eof: true } });
+      }
+      if (u.pathname.startsWith(`${path}/computeruse/`)) {
+        const action = u.pathname.split('/').at(-1);
+        computerUse.push(`${req.method} ${action}`);
+        if (action === 'start') desktopUp = true;
+        if (action === 'stop') {
+          registeredAtDesktopStop = (await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__desktop'").first()).n;
+          desktopUp = false;
+        }
+        return Response.json({ status: desktopUp ? 'active' : 'inactive' });
+      }
+    }
     if (u.hostname === 'daytona.example.test') {
       if (u.pathname === '/api/secret' && req.method === 'POST') {
         const body = await req.json();
@@ -264,6 +321,77 @@ try {
   for(const [owner,token] of [[email,'sk-bayleaf-owner'],['other@example.test','sk-bayleaf-other']])
     await db.prepare('INSERT INTO user_keys(email,bayleaf_token) VALUES (?,?)').bind(owner,token).run();
 
+  if (v2) {
+    machineId = 'sbx_browser-fixture'; state = 'running';
+    await db.prepare('UPDATE user_keys SET daytona_sandbox_id=? WHERE email=?').bind(machineId, email).run();
+    const desktop = (name, method = 'GET') => req(`/__test/${name}?service=desktop`, { method });
+    const complete = async () => {
+      for (let i = 0; i < 12; i++) {
+        await desktop('__tick');
+        const status = await (await desktop('status')).json();
+        if (status.phase !== 'opening') {
+          assert.equal(status.phase, 'ready', JSON.stringify(status));
+          return status;
+        }
+      }
+      assert.fail('Desktop lifecycle did not complete');
+    };
+    let ready;
+    await check('v2 Start verifies boot generation, keeping the lease after pause', async () => {
+      assert.equal((await desktop('start', 'POST')).status, 202);
+      ready = await complete();
+      state = 'paused';
+      const before = { executions, wakes };
+      assert.equal((await (await desktop('status')).json()).url, undefined);
+      assert.deepEqual({ executions, wakes }, before, 'GET never probes or wakes');
+      assert.equal((await desktop('start', 'POST')).status, 202);
+      const resumed = await complete();
+      assert.equal(wakes, before.wakes + 1);
+      assert.equal(resumed.url, ready.url);
+      assert.equal(resumed.operation, ready.operation);
+      assert.equal(previewCalls, 1);
+    });
+    await check('v2 Start replaces a stale lease after a same-ID full reboot', async () => {
+      bootId = '88888888-9999-4aaa-8bbb-cccccccccccc'; desktopUp = false;
+      const before = executions;
+      await desktop('status'); assert.equal(executions, before, 'GET never probes boot generation');
+      assert.equal((await desktop('start', 'POST')).status, 202);
+      const relaunched = await complete();
+      assert.notEqual(relaunched.operation, ready.operation);
+      assert.notEqual(relaunched.url, ready.url);
+      assert.equal(previewCalls, 2);
+      ready = relaunched;
+    });
+    await check('v2 Stop never resumes, and explicit Start or Restart finishes old cleanup before launching', async () => {
+      for (const action of ['start', 'restart']) {
+        state = 'paused'; computerUse = [];
+        const before = wakes;
+        const stopped = await desktop('stop', 'POST');
+        assert.equal(stopped.status, 202);
+        assert.deepEqual(await stopped.json(), { phase: 'stopped', access_revoked: true, cleanup_pending: true });
+        await desktop('__tick');
+        assert.equal(wakes, before);
+        assert.deepEqual(computerUse, []);
+        assert.equal((await desktop(action, 'POST')).status, 202);
+        const reopened = await complete();
+        assert.equal(wakes, before + 1);
+        assert.equal(registeredAtDesktopStop, 0);
+        assert.deepEqual(computerUse, ['POST stop', 'GET status', 'POST start', 'GET status']);
+        assert.notEqual(reopened.url, ready.url);
+        ready = reopened;
+      }
+    });
+    await check('v2 Stop can cancel an explicit launch before deferred cleanup wakes the machine', async () => {
+      state = 'paused'; computerUse = [];
+      const before = wakes;
+      await desktop('stop', 'POST');
+      assert.equal((await desktop('start', 'POST')).status, 202);
+      assert.equal((await desktop('stop', 'POST')).status, 202);
+      await desktop('__tick');
+      assert.equal(wakes, before);
+      assert.deepEqual(computerUse, []);
+    });
+  } else {
   await check('sandbox remote config is native V2, owner-key gated, and separate from desktop config',async()=>{
     const path='/sandbox/.well-known/opencode';
     const discovery=await (await req(path,{owner:false})).json();
@@ -848,5 +976,6 @@ try {
     assert.equal(editor.error,'creation_uncertain');assert.equal(creationRequests,before+1);
     failCreate=false;exists=true;
   });
+  }
   console.log(checks+' lifecycle checks passed (synthetic provider; no live deployment).');
 } finally {await mf.dispose();}

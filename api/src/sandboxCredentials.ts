@@ -5,6 +5,7 @@
 import type { Bindings, UserKeyRow } from './types';
 import { DAYTONA_DEFAULT_API_URL } from './constants';
 import { USER_ACTIVITY_COLUMNS } from './userActivity';
+import { daytonaV2, getV2Sandbox, v2Call, v2SandboxPath } from './daytonaV2';
 
 export const SANDBOX_TOKEN_PREFIX = 'sk-bayleaf-sandbox-';
 const seconds = () => Math.floor(Date.now() / 1000);
@@ -18,6 +19,15 @@ export interface SandboxCredential {
 }
 interface Secret { id: string; name: string; placeholder: string; hosts: string[] }
 interface Machine { id: string; state: string; toolboxProxyUrl?: string; labels?: Record<string, string>; env?: Record<string, string> }
+export const v2SecretName = (name: string) => /^BAYLEAF_SANDBOX_[A-F0-9]{32}$/.test(name);
+
+export async function v2CredentialApplied(env: Bindings, sc: SandboxCredential) {
+  if (!v2SecretName(sc.secret_name)) return false;
+  const r = await v2Call(env, `${v2SandboxPath(sc.sandbox_id)}/secrets`);
+  if (!r.ok) { await r.body?.cancel(); throw new Error('sandbox_secret_unavailable'); }
+  const { secrets, status } = await r.json() as { secrets?: string[]; status?: string };
+  return status === 'applied' && Array.isArray(secrets) && secrets.includes(sc.secret_name);
+}
 async function call(env: Bindings, path: string, method = 'GET', body?: unknown) {
   const base = env.DAYTONA_API_URL || DAYTONA_DEFAULT_API_URL;
   let end = base.length;
@@ -56,6 +66,12 @@ export async function authenticateSandboxCredential(env: Bindings, bearer: strin
   const owner = await getAccountRow(sc.email, env);
   if (!owner || owner.daytona_sandbox_id !== sc.sandbox_id) return null;
   try {
+    if (daytonaV2(env)) {
+      if (!v2SecretName(sc.secret_name)) return null;
+      const m = await getV2Sandbox(sc.sandbox_id, env);
+      if (!m || m.state === 'deleting' || m.labels?.[env.DAYTONA_DEPLOYMENT_LABEL] !== sc.email) return null;
+      return { ...owner, sandbox_credential_id: sc.id, toolbox_proxy_url: m.toolboxProxyUrl };
+    }
     const r = await call(env, `/sandbox/${encodeURIComponent(sc.sandbox_id)}`);
     if (!r.ok) { await r.body?.cancel(); return null; }
     const m = await r.json() as Machine;
@@ -63,6 +79,54 @@ export async function authenticateSandboxCredential(env: Bindings, bearer: strin
         ['destroyed', 'deleted'].includes(m.state)) return null;
     return { ...owner, sandbox_credential_id: sc.id, toolbox_proxy_url: m.toolboxProxyUrl };
   } catch { return null; }
+}
+
+async function attachV2Credential(env: Bindings, email: string, sandboxId: string) {
+  const m = await getV2Sandbox(sandboxId, env);
+  if (!m || m.labels?.[env.DAYTONA_DEPLOYMENT_LABEL] !== email) throw new Error('ownership_mismatch');
+  if (!['started', 'stopped', 'paused'].includes(m.state)) throw new Error('sandbox_secret_unavailable');
+  // The owner controller serializes setup. A pending row left by an interrupted
+  // attempt has no recoverable bearer; retain it only for provider cleanup.
+  await env.DB.prepare("UPDATE sandbox_credentials SET state='revoked',updated_at=? WHERE email=? AND sandbox_id=? AND state='pending'")
+    .bind(seconds(), email, sandboxId).run();
+  const mount = `${v2SandboxPath(sandboxId)}/secrets`;
+  const current = await v2Call(env, mount);
+  const revision = current.headers.get('ETag');
+  if (!current.ok || !revision) { await current.body?.cancel(); throw new Error('sandbox_secret_unavailable'); }
+  const { secrets, status } = await current.json() as { secrets: string[]; status?: string };
+  if (status === 'pending') throw new Error('sandbox_secret_unavailable');
+  if (!Array.isArray(secrets) || secrets.some(s => typeof s !== 'string')) {
+    throw new Error('existing_secret_mounts');
+  }
+  // Preserve every unrelated mount and remove only names already owned by this
+  // sandbox's revoked credential rows. The ETag protects concurrent updates.
+  const revoked = await env.DB.prepare("SELECT secret_name FROM sandbox_credentials WHERE sandbox_id=? AND state='revoked'")
+    .bind(sandboxId).all<{ secret_name: string }>();
+  const replaceable = new Set(revoked.results.map(r => r.secret_name));
+  const id = crypto.randomUUID(), bearer = token(), name = `BAYLEAF_SANDBOX_${id.replaceAll('-', '').toUpperCase()}`;
+  const secret = `/secrets/${name}`;
+  await env.DB.prepare(`INSERT INTO sandbox_credentials(id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at)
+    VALUES (?,?,?,?,?,'pending',?,?)`).bind(id, email, sandboxId, await credentialHash(bearer), name, seconds(), seconds()).run();
+  try {
+    const created = await v2Call(env, secret, 'PUT', { value: bearer, allowed_domains: ['api.bayleaf.dev'] }, { 'If-None-Match': '*' });
+    if (created.status !== 201) { await created.body?.cancel(); throw new Error('secret_unavailable'); }
+    const info = await created.json() as { name?: string; allowed_domains?: string[] };
+    if (info.name !== name || info.allowed_domains?.length !== 1 || info.allowed_domains[0] !== 'api.bayleaf.dev') {
+      throw new Error('secret_unavailable');
+    }
+    const attached = await v2Call(env, mount, 'PUT',
+      { secrets: [...secrets.filter(s => !replaceable.has(s)), name] }, { 'If-Match': revision });
+    await attached.body?.cancel();
+    if (!attached.ok) throw new Error('secret_attachment_failed');
+    const activated = await env.DB.prepare(`UPDATE sandbox_credentials SET state='active',secret_id=?,updated_at=?
+      WHERE id=? AND state='pending' AND EXISTS(SELECT 1 FROM user_keys WHERE email=? AND daytona_sandbox_id=?)`)
+      .bind(name, seconds(), id, email, sandboxId).run();
+    if (activated.meta.changes !== 1) throw new Error('credential_revoked');
+    return (await activeSandboxCredential(env, email, sandboxId))!;
+  } catch {
+    await env.DB.prepare("UPDATE sandbox_credentials SET state='revoked',updated_at=? WHERE id=?").bind(seconds(), id).run();
+    throw new Error('sandbox_credential_setup_failed');
+  }
 }
 
 // Exact-name discovery recovers an ambiguous create without ever reading values.
@@ -89,6 +153,7 @@ async function findSecret(env: Bindings, name: string): Promise<Secret | null> {
 export async function ensureSandboxCredential(env: Bindings, email: string, sandboxId: string): Promise<SandboxCredential> {
   const existing = await activeSandboxCredential(env, email, sandboxId);
   if (existing) return existing;
+  if (daytonaV2(env)) return attachV2Credential(env, email, sandboxId);
   const r = await call(env, `/sandbox/${encodeURIComponent(sandboxId)}`);
   if (!r.ok) throw new Error('sandbox_unavailable');
   const m = await r.json() as Machine;
@@ -137,10 +202,39 @@ export async function rotateSandboxCredential(env: Bindings, sc: SandboxCredenti
   await env.DB.prepare("UPDATE sandbox_credentials SET token_hash=?,updated_at=? WHERE id=? AND state='active'")
     .bind(await credentialHash(bearer), seconds(), sc.id).run();
   try {
-    const r = await call(env, `/secret/${encodeURIComponent(sc.secret_id)}`, 'PATCH', { value: bearer, hosts: ['api.bayleaf.dev'] });
+    const r = v2SecretName(sc.secret_name)
+      ? await v2Call(env, `/secrets/${sc.secret_name}`, 'PUT', { value: bearer, allowed_domains: ['api.bayleaf.dev'] })
+      : await call(env, `/secret/${encodeURIComponent(sc.secret_id)}`, 'PATCH', { value: bearer, hosts: ['api.bayleaf.dev'] });
     if (!r.ok) throw new Error('secret_unavailable');
     await r.body?.cancel();
   } catch { await revokeSandboxCredentials(env, sc.sandbox_id); throw new Error('rotation_failed'); }
+}
+
+async function cleanupV2Credential(env: Bindings, sc: SandboxCredential) {
+  const m = await getV2Sandbox(sc.sandbox_id, env);
+  if (sc.state === 'active') {
+    const owner = await getAccountRow(sc.email, env);
+    if (m && m.labels?.[env.DAYTONA_DEPLOYMENT_LABEL] === sc.email && owner?.daytona_sandbox_id === sc.sandbox_id) return;
+    await revokeSandboxCredentials(env, sc.sandbox_id);
+  }
+  if (m && m.state !== 'deleting' && m.labels?.[env.DAYTONA_DEPLOYMENT_LABEL] === sc.email) {
+    const path = `${v2SandboxPath(m.id)}/secrets`;
+    const r = await v2Call(env, path);
+    const revision = r.headers.get('ETag');
+    if (!r.ok || !revision) { await r.body?.cancel(); return; }
+    const { secrets, status } = await r.json() as { secrets: string[]; status?: string };
+    if (!Array.isArray(secrets) || status === 'pending') return;
+    if (secrets.includes(sc.secret_name)) {
+      const updated = await v2Call(env, path, 'PUT', { secrets: secrets.filter(s => s !== sc.secret_name) }, { 'If-Match': revision });
+      await updated.body?.cancel();
+      return; // Detachment is asynchronous; next scheduled pass verifies it.
+    }
+  }
+  const r = await v2Call(env, `/secrets/${sc.secret_name}`, 'DELETE');
+  await r.body?.cancel();
+  if (r.ok || (r.status === 404 && (sc.secret_id || sc.created_at <= seconds() - 86400))) {
+    await env.DB.prepare("DELETE FROM sandbox_credentials WHERE id=? AND state='revoked'").bind(sc.id).run();
+  }
 }
 
 /** Hourly, bounded cleanup. Pending rows older than setup's deadline cannot authorize.
@@ -153,6 +247,9 @@ export async function cleanupSandboxCredentials(env: Bindings) {
   for (const sc of rows.results) {
     try {
       if (sc.state === 'pending') continue;
+      if (v2SecretName(sc.secret_name)) { await cleanupV2Credential(env, sc); continue; }
+      // v0 verifiers and provider secrets are retained through the rollback window.
+      if (daytonaV2(env) && env.DAYTONA_V2_RETIRE_V0_CREDENTIALS !== 'true') continue;
       if (sc.state === 'active') {
         const owner = await getAccountRow(sc.email, env);
         const r = await call(env, `/sandbox/${encodeURIComponent(sc.sandbox_id)}`);

@@ -18,6 +18,22 @@ spec.loader.exec_module(m)
 
 
 class InstallerTests(unittest.TestCase):
+    def test_v2_secret_uses_named_env_and_replaces_only_managed_placeholder(self):
+        directory = self.root / 'credentials'
+        directory.mkdir()
+        (directory / 'owner-key').write_text('dtn_secret_old')
+        name = 'BAYLEAF_SANDBOX_' + 'A' * 32
+        m.atomic('request.json', {'secret_env': name})
+        with patch.dict(os.environ, {name: 'sk-bayleaf-sandbox-not-a-placeholder'}):
+            with self.assertRaisesRegex(m.Failure, 'credential_missing'):
+                m.accept_placeholder()
+            self.assertEqual((directory / 'owner-key').read_text(), 'dtn_secret_old')
+        with patch.dict(os.environ, {name: 'dtns_fixture'}):
+            m.accept_placeholder()
+            self.assertEqual((directory / 'owner-key').read_text(), 'dtns_fixture')
+            self.assertEqual((directory / 'owner-key').stat().st_mode & 0o777, 0o600)
+            self.assertEqual(m.service_environment()['BAYLEAF_API_KEY'], 'dtns_fixture')
+
     def test_opencode_web_has_isolated_state_and_native_auth(self):
         home = self.root / 'home'
         home.mkdir()
@@ -524,11 +540,18 @@ class InstallerTests(unittest.TestCase):
         home=self.root/'home'
         with patch.object(m.Path,'home',return_value=home), patch.object(m,'request'), \
              patch.object(m,'environment',return_value={}), patch.object(m,'command') as command:
-            m.ensure_opencode('test')
-            argv=command.call_args.args[0]
-            self.assertEqual(argv[:3],['node','--input-type=module','-e'])
-            self.assertIn('openchamber/web/server/lib/opencode/v2-install.js',argv[3])
-            self.assertIn('await installOpenCodeV2()',argv[3])
+            for layout in ('build/server', 'server'):
+                with self.subTest(layout=layout):
+                    module = self.root/'releases'/m.RELEASE/'lib/node_modules/@openchamber/web'/layout/'lib/opencode/v2-install.js'
+                    module.parent.mkdir(parents=True)
+                    module.touch()
+                    m.ensure_opencode('test')
+                    argv=command.call_args.args[0]
+                    self.assertEqual(argv[:3],['node','--input-type=module','-e'])
+                    self.assertIn(module.as_uri(),argv[3])
+                    self.assertIn('await installOpenCodeV2()',argv[3])
+                    self.assertEqual(command.call_args.kwargs['env']['SHELL'], '/bin/bash')
+                    module.unlink()
             binary=home/'.opencode/bin/opencode'
             binary.parent.mkdir(parents=True);binary.write_text('synthetic');binary.chmod(0o700)
             command.reset_mock();m.ensure_opencode('test');command.assert_not_called()

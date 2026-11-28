@@ -266,7 +266,7 @@ const SandboxCard: FC<{ sandboxInfo: SandboxInfo | null }> = ({ sandboxInfo }) =
     ? state.charAt(0).toUpperCase() + state.slice(1)
     : 'None';
   const stateColor = state === 'started' ? '#2d7d46'
-    : state === 'stopped' ? '#7a5a00'
+    : state === 'stopped' || state === 'paused' ? '#7a5a00'
     : state === 'archived' ? '#3a6fb5'
     : state === 'error' ? '#c41e3a'
     : '#555';
@@ -283,7 +283,8 @@ const SandboxCard: FC<{ sandboxInfo: SandboxInfo | null }> = ({ sandboxInfo }) =
         </div>
         {sandboxInfo?.cpu != null && (
           <div class={statStyle}>
-            <div class={statValueStyle}>{sandboxInfo.cpu}</div>
+            <div class={statValueStyle}>{sandboxInfo.reservedCpu != null && sandboxInfo.reservedCpu !== sandboxInfo.cpu
+              ? `${sandboxInfo.reservedCpu}–${sandboxInfo.cpu}` : sandboxInfo.cpu}</div>
             <div class={statLabelStyle}>vCPU</div>
           </div>
         )}
@@ -344,9 +345,9 @@ const SandboxCard: FC<{ sandboxInfo: SandboxInfo | null }> = ({ sandboxInfo }) =
           <pre><code>{`curl https://api.bayleaf.dev/sandbox/files/home/daytona/workspace/hello.txt \\
   -H "Authorization: Bearer YOUR_API_KEY"`}</code></pre>
           <p style="margin-top: 0.75rem; font-size: 0.9em; color: #555;">
-            Sandboxes auto-stop after {sandboxInfo?.autoStopInterval ?? 60} min idle and auto-archive
-            after {sandboxInfo?.autoArchiveInterval ?? 1440} min stopped.
-            The first request after idle may take a few seconds while the sandbox restarts.
+            {sandboxInfo?.idlePauseMinutes != null
+              ? `Your workspace pauses after ${sandboxInfo.idlePauseMinutes} minutes idle. Files and processes are kept; work resumes when the workspace wakes.`
+              : `Sandboxes auto-stop after ${sandboxInfo?.autoStopInterval ?? 60} min idle and auto-archive after ${sandboxInfo?.autoArchiveInterval ?? 1440} min stopped. The first request after idle may take a few seconds while the sandbox restarts.`}
           </p>
         </div>
       </details>

@@ -40,6 +40,9 @@ the workflow. Contract changes go to the Lathe repo first (its §0).
    `npm run test:sandbox-browser` (managed slots share the builder). Add cases
    for any new rule in `scripts/harness-previews.mjs`, reusing the `/status`,
    `/app-error`, `/large-error` fixtures.
+   Qualify binary traffic at the deployment's Workers compatibility date.
+   Explicitly select `arraybuffer` on both relay sockets before accepting
+   them: newer compatibility dates deliver `Blob` by default.
 2. **Type-check and deploy.** `npx tsc --noEmit && npm run deploy`; record the
    version ID. Allow tens of seconds for propagation before trusting results.
 3. **Live contract cases.**

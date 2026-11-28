@@ -108,6 +108,7 @@ const controls = (service: typeof SERVICES[number]) => `
   <div class="actions">
     <button type="button" class="button" id="${service.id}-start" aria-label="Open ${escapeHtml(service.name)}" hidden>${escapeHtml(service.launch)}</button>
     <a class="button" id="${service.id}-open" aria-label="Open ${escapeHtml(service.name)} (new tab)" hidden target="_blank" rel="noopener noreferrer">Open <span class="note-window">(new tab)</span></a>
+    <button type="button" class="button" id="${service.id}-open-checked" aria-label="Open ${escapeHtml(service.name)} (new tab)" hidden>Open <span class="note-window">(new tab)</span></button>
     <button type="button" class="secondary" id="${service.id}-stop" hidden>Stop app</button>
   </div>
   <details class="app-help"><summary>Using ${escapeHtml(service.name)} here</summary>
@@ -142,7 +143,7 @@ const controlsScript = `(() => {
     const el = id => root.querySelector('#' + service.id + '-' + id);
     const endpoint = root.dataset.endpoint;
     const {labels, errors} = service;
-    let timer, snapshot, busy = false, ready = false, requestVersion = 0, authExpired = false;
+    let timer, snapshot, pendingOpen, busy = false, ready = false, requestVersion = 0, authExpired = false;
     const duration = seconds => {
       seconds = Math.max(0,Math.floor(seconds));
       return seconds < 60 ? seconds + 's' : Math.floor(seconds/60) + 'm ' + seconds%60 + 's';
@@ -172,24 +173,48 @@ const controlsScript = `(() => {
       try { const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password?url.href:null; }
       catch { return null; }
     }
+    function cancelOpen() {
+      pendingOpen?.tab?.close();
+      pendingOpen=undefined;
+    }
+    function finishOpen(url) {
+      if(!pendingOpen)return;
+      const {tab}=pendingOpen;
+      pendingOpen=undefined;
+      if(tab) {
+        if(!tab.closed)tab.location.replace(url);
+      } else {
+        // Offer a native new-tab link only after the server validates it.
+        el('open').href=url;
+        el('open').hidden=false;
+        el('open-checked').hidden=true;
+        el('open').focus();
+        say('The new tab was blocked. Select Open to continue.');
+        timer=setTimeout(()=>render(snapshot),30_000);
+      }
+    }
     function render(s) {
       snapshot=s;clearTimeout(timer);
       const url=safeLink(s.url);
       ready=s.phase==='ready'&&!!url;
       const opening=s.phase==='opening';
+      const validateOpen=ready&&s.validate_open===true;
+      const resumeCleanup=!opening&&s.can_resume_cleanup===true;
       root.dataset.phase=s.phase;
-       say(s.error ? (errors[s.error]||'Could not open '+service.name+'. Try again, or contact BayLeaf support.')
+       say(resumeCleanup?'Access revoked. Resume your sandbox to finish cleanup and open this app.'
+           :s.error ? (errors[s.error]||'Could not open '+service.name+'. Try again, or contact BayLeaf support.')
           :opening?(labels[s.progress]||'Preparing '+service.name)+'…'
           :s.phase==='stopped'?(s.access_revoked===false?'Revoking access; cleanup pending':s.cleanup_pending?'Access revoked; process cleanup pending':'Stopped. Saved files remain.')
           :ready?'Running':'');
-      el('start').hidden=ready||opening||s.cleanup_pending||s.access_revoked===false;
-       el('start').textContent=s.phase==='failed'?'Try again':service.launch;
+      el('start').hidden=ready||opening||(s.cleanup_pending&&!resumeCleanup)||s.access_revoked===false;
+       el('start').textContent=resumeCleanup?'Resume to finish cleanup and open':s.phase==='failed'?'Try again':service.launch;
        el('troubleshoot').hidden=!(ready||opening||s.error||s.previous_failure||s.phase==='failed');
        el('repair-label').textContent=s.error||s.previous_failure||s.phase==='failed'?'Troubleshooting & repair':opening?'Setup details':'Repair this app';
        el('start').setAttribute('aria-label',el('start').textContent+' '+service.name);
       el('intro').hidden=s.machine!=='absent';
-      el('open').hidden=!ready;
-      if(ready)el('open').href=url;else el('open').removeAttribute('href');
+      el('open').hidden=!ready||validateOpen;
+      el('open-checked').hidden=!validateOpen;
+      if(ready&&!validateOpen)el('open').href=url;else el('open').removeAttribute('href');
       el('restart').hidden=!ready;
       const stoppable=!!s.operation&&['opening','ready','expired','failed'].includes(s.phase);
       el('stop').hidden=!(stoppable||s.cleanup_pending||s.access_revoked===false);
@@ -198,12 +223,17 @@ const controlsScript = `(() => {
       el('previous').textContent=previous?'Previous attempt failed at '+clock(previous.at)+' after '+duration(previous.elapsed)
         +': '+(errors[previous.error]||'Setup could not complete')+' ['+previous.error+'].':'';
        timing();
+      if(pendingOpen?.operation&&!opening) {
+        if(validateOpen&&s.operation===pendingOpen.operation)finishOpen(url);
+        else cancelOpen();
+      }
       if(opening||s.cleanup_pending||s.access_revoked===false)timer=setTimeout(refresh,5000);
     }
     function signedOut() {
+      cancelOpen();
       authExpired=true;ready=false;snapshot=undefined;clearTimeout(timer);
       root.dataset.phase='signed-out';
-        for(const id of ['start','restart','stop','open','timing','progress','previous','troubleshoot'])el(id).hidden=true;
+        for(const id of ['start','restart','stop','open','open-checked','timing','progress','previous','troubleshoot'])el(id).hidden=true;
        el('open').removeAttribute('href');el('login').hidden=false;
       say('Your session has expired. Sign in again to continue.');
     }
@@ -219,29 +249,67 @@ const controlsScript = `(() => {
         if(version===requestVersion)render(result);
       } catch {
         if(version===requestVersion){
+          cancelOpen();
           say('Could not check status. Try refreshing.');
           if(snapshot?.phase==='opening')timer=setTimeout(refresh,5000);
         }
       }
     }
-    async function action(name) {
+    async function action(name, openTab=false) {
       if(busy||authExpired)return;
       busy=true;++requestVersion;clearTimeout(timer);
-      const actionButtons=['start','restart','stop'].map(el);
+      cancelOpen();
+      const actionButtons=['start','restart','stop','open-checked'].map(el);
       actionButtons.forEach(b=>b.disabled=true);
        say('Requesting '+service.name+(name==='stop'?' shutdown…':name==='restart'?' restart…':' setup…'));
       try {
+        if(openTab) {
+          // Reserve the tab inside the click, before awaiting the POST.
+          pendingOpen={tab:null};
+          try {
+            const tab=window.open('about:blank','_blank');
+            pendingOpen.tab=tab;
+            if(tab) {
+              tab.opener=null;
+              tab.document.title='Opening '+service.name;
+              tab.document.body.textContent='Waiting for BayLeaf to open '+service.name+'…';
+              const referrer=tab.document.createElement('meta');
+              referrer.name='referrer';referrer.content='no-referrer';tab.document.head.append(referrer);
+            }
+          } catch {
+            pendingOpen.tab?.close();
+            pendingOpen.tab=null;
+          }
+        }
         const r=await fetch(endpoint+'/'+name,{method:'POST',headers:{'X-BayLeaf-Action':'managed-service'},credentials:'same-origin',redirect:'error'});
         if(r.status===401){signedOut();return;}
         const result=await r.json();
         if(!r.ok) {
+          cancelOpen();
           if(typeof result.phase==='string')render(result);
           else say(errors[result.error]||'Could not submit the action. Refresh status before retrying.');
+        } else if(openTab) {
+          const url=safeLink(result.url);
+          if(result.phase==='ready'&&result.validate_open===true&&url) {
+            render(result);
+            finishOpen(url);
+          } else if(pendingOpen&&result.phase==='opening'&&typeof result.operation==='string') {
+            pendingOpen.operation=result.operation;
+            await refresh();
+          } else {
+            cancelOpen();
+            say('Could not verify the app link. Refresh status before retrying.');
+          }
         } else await refresh();
-      } catch {say('Could not submit the action. Refresh status before retrying.');}
+      } catch {cancelOpen();say('Could not submit the action. Refresh status before retrying.');}
       finally {busy=false;actionButtons.forEach(b=>b.disabled=authExpired);}
     }
     ['start','restart','stop'].forEach(name=>el(name).addEventListener('click',()=>action(name)));
+    el('open-checked').addEventListener('click',()=>action('start',true));
+    el('open').addEventListener('click',()=>{
+      if(snapshot?.validate_open===true)setTimeout(()=>{if(snapshot)render(snapshot);},0);
+    });
+    window.addEventListener('pagehide',cancelOpen);
     window.addEventListener('focus',()=>{if(!busy)refresh();});
     setInterval(()=>{if(!busy&&ready&&snapshot?.deadline<=Math.floor(Date.now()/1000))refresh();},30000);
     setInterval(timing,1000);

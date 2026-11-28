@@ -343,7 +343,9 @@ async function registerPreview(env: Bindings, policy: Deployment, input: Preview
 
 function apiPolicy(env: Bindings): Deployment {
   return { id: '__api', email_domain: env.ALLOWED_EMAIL_DOMAIN,
-    upstream_suffixes: (env.PREVIEWS_UPSTREAM_SUFFIXES ?? '').split(',').map(s => s.trim()),
+    upstream_suffixes: (env.DAYTONA_API_VERSION === '2'
+      ? env.PREVIEWS_V2_UPSTREAM_SUFFIXES ?? ''
+      : env.PREVIEWS_UPSTREAM_SUFFIXES ?? '').split(',').map(s => s.trim()),
     // Daytona's default CORS layer echoes any Origin with credentials and answers
     // preflights itself; disabling it leaves cross-origin policy to the app.
     upstream_headers: { 'X-Daytona-Skip-Preview-Warning': 'true', 'X-Daytona-Disable-CORS': 'true' } };
@@ -494,7 +496,7 @@ export async function handlePreviewHost(c: Context<AppEnv>): Promise<Response> {
       }
       return failure(404);
     }
-    if (!configured(c.env)) return failure(503);
+    if (!configured(c.env) || c.env.SANDBOX_MIGRATION_READONLY === 'true') return failure(503);
     const u = new URL(c.req.url);
     if (u.protocol !== 'https:' || u.port) return failure();
     const r = await registration(c.env, u.hostname);
@@ -618,7 +620,7 @@ function containsUpstreamCredential(value: string, target: URL): boolean {
  * exclude configured secrets and the signed upstream hostname credential. */
 async function platformCredential(value: string, request: Request, env: Bindings, target: URL): Promise<boolean> {
   const token = value.trim().replace(/^Bearer\s+/i, '').trim();
-  if (/^(?:sk-|tk_|admin_|tvly-|dt_)|^campus$/i.test(token)) return true;
+  if (/^(?:sk-|tk_|admin_|tvly-|dt_|dtns_|dtn_secret_)|^campus$/i.test(token)) return true;
   if (containsUpstreamCredential(token, target)) return true;
   for (const [key, secret] of Object.entries(env)) {
     if (/(?:KEY|SECRET|TOKEN)$/.test(key) && typeof secret === 'string' && secret && token.includes(secret)) return true;
@@ -925,6 +927,10 @@ export class PreviewConnections {
           return failure(502);
         }
         const pair = new WebSocketPair();
+        // Newer Workers compatibility dates default to Blob delivery. Request
+        // byte buffers explicitly so both directions relay in order, unmodified.
+        pair[1].binaryType = 'arraybuffer';
+        upstream.binaryType = 'arraybuffer';
         pair[1].accept();
         const connection = { downstream: pair[1], upstream, generation: r.generation, expiresAt: Math.min(r.expires_at, sessionExpiry) };
         pendingConnection = connection;

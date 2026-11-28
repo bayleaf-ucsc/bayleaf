@@ -102,6 +102,14 @@ export interface Bindings {
   
   // Sandbox (Daytona) configuration
   DAYTONA_API_URL: string;         // Control plane URL (e.g. https://app.daytona.io/api)
+  DAYTONA_API_VERSION?: string;   // "2" selects v2 for staged migration
+  DAYTONA_V2_CREATE_ENABLED?: string;
+  DAYTONA_V2_IMAGE?: string;
+  DAYTONA_V2_REGION?: string;
+  DAYTONA_V2_REAPER_DELETE?: string;
+  DAYTONA_V2_RETIRE_V0_CREDENTIALS?: string;
+  SANDBOX_MIGRATION_READONLY?: string;
+  PREVIEWS_V2_UPSTREAM_SUFFIXES?: string;
   DAYTONA_PROXY_URL: string;       // Toolbox proxy URL (e.g. https://proxy.app.daytona.io/toolbox)
   DAYTONA_DEPLOYMENT_LABEL: string; // Label prefix for sandbox tagging (e.g. chat.bayleaf.dev; shared with Lathe per issue #14)
   DAYTONA_AUTO_DELETE_MINUTES: string; // Daytona stopped-state deletion grace period; "-1" disables it

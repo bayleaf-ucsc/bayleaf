@@ -38,7 +38,9 @@ import {
   refreshActivity,
   deleteSandbox,
   createSignedPreview,
+  lookupOwnedV2Sandbox,
 } from '../daytona';
+import { daytonaV2 } from '../daytonaV2';
 import { previewsEnabled, registerUserPreview, revokeUserPreview } from './previews';
 import { grantError, insideSandboxDirs, requireScope, storedGrantSandboxDirs, type GrantScope } from '../grants';
 import {
@@ -153,9 +155,10 @@ async function resolveSandboxId(
   const result: EnsureResult = await ensureSandbox(email, env, cachedId);
 
   if (result.changed) {
-    await env.DB.prepare(
-      'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ?',
-    ).bind(result.id, email).run();
+    const update = await env.DB.prepare(
+      'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ? AND (daytona_sandbox_id IS ? OR daytona_sandbox_id = ?)',
+    ).bind(result.id, email, cachedId, result.id).run();
+    if (update.meta.changes !== 1) throw new Error('Sandbox binding changed');
   }
 
   return result.id;
@@ -163,12 +166,15 @@ async function resolveSandboxId(
 
 /** Clear the cached sandbox ID in D1 for the given email. */
 async function clearCachedSandboxId(
-  email: string,
+  email: string, id: string,
   env: AppEnv['Bindings'],
 ): Promise<void> {
-  await env.DB.prepare(
-    'UPDATE user_keys SET daytona_sandbox_id = NULL WHERE email = ?',
-  ).bind(email).run();
+  const clear = env.DB.prepare(
+    'UPDATE user_keys SET daytona_sandbox_id = NULL WHERE email = ? AND daytona_sandbox_id = ?',
+  ).bind(email, id);
+  if (daytonaV2(env)) {
+    await env.DB.batch([clear, env.DB.prepare('DELETE FROM sandbox_import_activity WHERE sandbox_id=?').bind(id)]);
+  } else await clear.run();
 }
 
 /**
@@ -187,6 +193,8 @@ async function lookupSandboxInfo(
   ).bind(email).first<Pick<UserKeyRow, 'daytona_sandbox_id'>>();
 
   const cachedId = row?.daytona_sandbox_id ?? null;
+
+  if (daytonaV2(env)) return lookupOwnedV2Sandbox(email, env, cachedId);
 
   if (cachedId) {
     try {
@@ -552,6 +560,9 @@ sandboxRoutes.get('/', async (c) => {
       disk: sandbox.disk,
       autoStopInterval: sandbox.autoStopInterval,
       autoArchiveInterval: sandbox.autoArchiveInterval,
+      idlePauseMinutes: sandbox.idlePauseMinutes,
+      reservedCpu: sandbox.reservedCpu,
+      reservedMemory: sandbox.reservedMemory,
       createdAt: sandbox.createdAt,
       updatedAt: sandbox.updatedAt,
     }, 200);
@@ -682,7 +693,9 @@ sandboxRoutes.openapi(deleteSandboxRoute, async (c) => {
 
     let sandboxId = row?.daytona_sandbox_id ?? null;
 
-    if (!sandboxId) {
+    if (daytonaV2(c.env)) {
+      sandboxId = (await lookupOwnedV2Sandbox(email, c.env, sandboxId))?.id ?? null;
+    } else if (!sandboxId) {
       const sandbox = await findSandboxByLabel(email, c.env);
       sandboxId = sandbox?.id ?? null;
     }
@@ -692,7 +705,7 @@ sandboxRoutes.openapi(deleteSandboxRoute, async (c) => {
     }
 
     await deleteSandbox(sandboxId, c.env);
-    await clearCachedSandboxId(email, c.env);
+    await clearCachedSandboxId(email, sandboxId, c.env);
     return c.json({ success: true as const, message: 'Sandbox deleted.' }, 200);
   } catch (e) {
     console.error('Sandbox delete error:', e);

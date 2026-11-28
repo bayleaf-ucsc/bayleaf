@@ -14,6 +14,7 @@
 import type { Bindings } from './types';
 import { revokeSandboxCredentials } from './sandboxCredentials';
 import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
+import { daytonaV2, getV2Sandbox, findV2Sandbox, createV2Sandbox, v2Call, v2SandboxPath, v2Toolbox, v2Execute, v2UploadFile } from './daytonaV2';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -36,6 +37,13 @@ export interface SandboxInfo {
   updatedAt?: string;      // ISO 8601
   autoStopInterval?: number;    // minutes
   autoArchiveInterval?: number; // minutes
+  idlePauseMinutes?: number;
+  lastActivityAt?: string;
+  toolboxProxyUrl?: string;
+  persistent?: boolean;
+  public?: boolean;
+  reservedCpu?: number;
+  reservedMemory?: number;
 }
 
 export interface ExecResult {
@@ -95,6 +103,7 @@ export async function findSandboxByLabel(
   email: string,
   env: Bindings,
 ): Promise<SandboxInfo | null> {
+  if (daytonaV2(env)) return findV2Sandbox(email, env);
   const deployLabel = env.DAYTONA_DEPLOYMENT_LABEL;
   const labelsFilter = JSON.stringify({ [deployLabel]: email });
   const url = `${apiUrl(env, '/sandbox')}?labels=${encodeURIComponent(labelsFilter)}`;
@@ -134,6 +143,7 @@ export async function createPersistentSandbox(
   email: string,
   env: Bindings,
 ): Promise<SandboxInfo> {
+  if (daytonaV2(env)) return createV2Sandbox(email, env);
   const resp = await fetch(apiUrl(env, '/sandbox'), {
     method: 'POST',
     headers: authHeaders(env),
@@ -172,9 +182,28 @@ export async function startSandbox(id: string, env: Bindings): Promise<void> {
   }
 }
 
+/** Wake only a stable idle state; paused v2 machines keep their processes. */
+export async function wakeV2Sandbox(m: SandboxInfo, env: Bindings): Promise<void> {
+  const action = m.state === 'paused' ? 'resume' : 'start';
+  const r = await v2Call(env, `${v2SandboxPath(m.id)}/${action}`, 'POST');
+  await r.body?.cancel();
+  if (!r.ok && r.status !== 409) throw new Error(`Daytona wake failed (${r.status})`);
+}
+
 /** Delete a sandbox entirely. */
 export async function deleteSandbox(id: string, env: Bindings): Promise<void> {
   await revokeSandboxCredentials(env, id);
+  if (daytonaV2(env)) {
+    const r = await v2Call(env, v2SandboxPath(id), 'DELETE');
+    await r.body?.cancel();
+    if (!r.ok && r.status !== 404) throw new Error(`Daytona delete failed (${r.status})`);
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      if (!await getV2Sandbox(id, env)) return;
+      await sleep(1000);
+    }
+    throw new Error('Daytona deletion is pending');
+  }
   const resp = await fetch(apiUrl(env, `/sandbox/${id}`), {
     method: 'DELETE',
     headers: authHeaders(env),
@@ -198,6 +227,12 @@ export async function deleteSandbox(id: string, env: Bindings): Promise<void> {
  * See https://www.daytona.io/docs/en/sandboxes.md (Update sandbox last activity).
  */
 export async function refreshActivity(id: string, env: Bindings): Promise<void> {
+  if (daytonaV2(env)) {
+    const r = await v2Call(env, `${v2SandboxPath(id)}/reset-idle-timer`, 'POST');
+    await r.body?.cancel();
+    if (!r.ok) throw new Error(`Daytona idle timer reset failed (${r.status})`);
+    return;
+  }
   const resp = await fetch(apiUrl(env, `/sandbox/${id}/last-activity`), {
     method: 'POST',
     headers: authHeaders(env),
@@ -211,6 +246,11 @@ export async function refreshActivity(id: string, env: Bindings): Promise<void> 
 
 /** Get current sandbox info (state, etc.). */
 export async function getSandboxInfo(id: string, env: Bindings): Promise<SandboxInfo> {
+  if (daytonaV2(env)) {
+    const info = await getV2Sandbox(id, env);
+    if (!info) throw new Error('Daytona sandbox not found');
+    return info;
+  }
   const resp = await fetch(apiUrl(env, `/sandbox/${id}`), {
     headers: authHeaders(env),
   });
@@ -225,11 +265,13 @@ export async function getSandboxInfo(id: string, env: Bindings): Promise<Sandbox
 
 /** Port-scoped credential, kept server-side by the owner-authenticated wrapper. */
 export async function createSignedPreview(
-  id: string, port: number, env: Bindings,
+  id: string, port: number, env: Bindings, expiresInSeconds = 86400,
 ): Promise<{ url: string } | null> {
   try {
-    const response = await fetch(apiUrl(env,
-      `/sandbox/${encodeURIComponent(id)}/ports/${port}/signed-preview-url?expiresInSeconds=86400`), {
+    const response = daytonaV2(env)
+      ? await v2Call(env, `${v2SandboxPath(id)}/ports/${port}/signed-preview-urls`, 'POST', { expires_in_seconds: expiresInSeconds })
+      : await fetch(apiUrl(env,
+      `/sandbox/${encodeURIComponent(id)}/ports/${port}/signed-preview-url?expiresInSeconds=${expiresInSeconds}`), {
       headers: authHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) { await response.body?.cancel(); return null; }
@@ -313,6 +355,45 @@ export interface EnsureResult {
   changed: boolean;
 }
 
+/** A v0 cached ID is a migration hold. Passive or active traffic must never
+ * silently rebind it to a different filesystem or clear it on provider error. */
+export async function lookupOwnedV2Sandbox(email: string, env: Bindings, cachedId?: string | null) {
+  if (cachedId) {
+    const current = await getV2Sandbox(cachedId, env);
+    if (current) {
+      if (current.labels?.[env.DAYTONA_DEPLOYMENT_LABEL] !== email) throw new Error('Sandbox ownership mismatch');
+      return current;
+    }
+  }
+  return findV2Sandbox(email, env);
+}
+
+async function ensureV2Sandbox(email: string, env: Bindings, cachedId?: string | null): Promise<EnsureResult> {
+  let m = await lookupOwnedV2Sandbox(email, env, cachedId) ?? await createV2Sandbox(email, env);
+  const id = m.id;
+  const deadline = Date.now() + 120_000;
+  let wakeRequested = false;
+  while (Date.now() < deadline) {
+    if (m.state === 'started') {
+      try {
+        const ready = await v2Execute(env, m, ['mkdir', '-p', '/home/daytona/workspace'], 5_000);
+        if (ready.exitCode === 0) return { id, changed: id !== cachedId };
+      } catch { /* Toolbox starts independently of the VM; retry readiness only. */ }
+    } else if (m.state === 'paused' || m.state === 'stopped') {
+      if (!wakeRequested) {
+        await wakeV2Sandbox(m, env);
+        wakeRequested = true;
+      }
+    } else if (!['starting', 'pausing', 'stopping'].includes(m.state)) {
+      throw new Error('Daytona sandbox cannot be started in its current state');
+    }
+    await sleep(1000);
+    m = await getSandboxInfo(id, env);
+    if (m.labels?.[env.DAYTONA_DEPLOYMENT_LABEL] !== email) throw new Error('Sandbox ownership changed');
+  }
+  throw new Error('Timed out preparing Daytona sandbox');
+}
+
 /**
  * Ensure a persistent sandbox is running for the given email.
  * Handles the full lifecycle: cached-ID fast-path → find-by-label
@@ -327,6 +408,7 @@ export async function ensureSandbox(
   env: Bindings,
   cachedId?: string | null,
 ): Promise<EnsureResult> {
+  if (daytonaV2(env)) return ensureV2Sandbox(email, env, cachedId);
   let sandbox: SandboxInfo | null = null;
 
   // Fast path: try the cached ID first (saves a label-lookup round-trip)
@@ -407,6 +489,22 @@ export async function execCommand(
   const scriptPath = `/tmp/bayleaf-exec-${crypto.randomUUID()}.sh`;
   const scriptBlob = new Blob([script], { type: 'application/octet-stream' });
 
+  if (daytonaV2(env)) {
+    const m = await getSandboxInfo(sandboxId, env);
+    try {
+      // Linux limits each argv entry; pass only the path even for large scripts.
+      await v2UploadFile(env, m, scriptPath, scriptBlob);
+      return await v2Execute(env, m, ['bash', scriptPath], 120_000, workdir);
+    } finally {
+      try {
+        await v2Execute(env, m, ['rm', '-f', '--', scriptPath], 5_000);
+      } catch {
+        // Upload or execution may have failed after writing the file. Cleanup
+        // is best-effort and must never replace the command's result or error.
+      }
+    }
+  }
+
   // Upload the script via multipart form
   const uploadForm = new FormData();
   uploadForm.append('file', scriptBlob, 'file');
@@ -471,6 +569,8 @@ export async function downloadFile(
   path: string,
   env: Bindings,
 ): Promise<Response> {
+  if (daytonaV2(env)) return v2Toolbox(env, await getSandboxInfo(sandboxId, env),
+    `/files/download?${new URLSearchParams({ path })}`, { signal: AbortSignal.timeout(120_000) });
   const url = `${toolboxUrl(env, sandboxId, '/files/download')}?path=${encodeURIComponent(path)}`;
   return fetch(url, {
     headers: { 'Authorization': `Bearer ${env.DAYTONA_API_KEY}` },
@@ -501,6 +601,14 @@ export async function uploadFile(
   // Ensure parent directory exists. Quoted as one argument: unquoted, a path
   // with spaces became several mkdir arguments, creating directories elsewhere.
   const parent = path.replace(/\/[^/]+$/, '');
+  if (daytonaV2(env)) {
+    const m = await getSandboxInfo(sandboxId, env);
+    if (parent && parent !== path && (await v2Execute(env, m, ['mkdir', '-p', '--', parent], 5000)).exitCode !== 0) {
+      throw new Error('Could not create upload directory');
+    }
+    await v2UploadFile(env, m, path, new Blob([body]));
+    return;
+  }
   if (parent && parent !== path) {
     await fetch(toolboxUrl(env, sandboxId, '/process/execute'), {
       method: 'POST',

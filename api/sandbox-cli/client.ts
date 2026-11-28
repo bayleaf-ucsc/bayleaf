@@ -29,12 +29,12 @@ export async function credential(env = process.env, home = homedir()): Promise<s
       catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') fail('credential_unavailable'); }
     }
   }
-  if (!value || !/^(?:dtn_secret_[A-Za-z0-9_-]+|sk-bayleaf-(?:sandbox-)?[A-Za-z0-9_-]+)$/.test(value)) fail('credential_missing_or_invalid');
+  if (!value || !/^(?:(?:dtn_secret_|dtns_)[A-Za-z0-9_-]+|sk-bayleaf-(?:sandbox-)?[A-Za-z0-9_-]+)$/.test(value)) fail('credential_missing_or_invalid');
   return value!;
 }
 export function redact(value: unknown, key: string): string {
   const text = JSON.stringify(value);
-  if (text.includes(key) || /(?:sk-bayleaf-|dtn_secret_)[A-Za-z0-9_-]+/.test(text)) fail('credential_in_response');
+  if (text.includes(key) || /(?:sk-bayleaf-|dtn_secret_|dtns_)[A-Za-z0-9_-]+/.test(text)) fail('credential_in_response');
   return text;
 }
 type Session = { session: string; expires_at: number; binding: string };
@@ -110,7 +110,7 @@ export class Client {
     if (name === 'expose' && body.upstream_headers) {
       for (const value of Object.values(body.upstream_headers as Record<string, string>)) {
         const decoded = /^Basic\s+/i.test(value) ? Buffer.from(value.replace(/^Basic\s+/i, ''), 'base64').toString('utf8') : '';
-        if ([value, decoded].some(v => v.includes(this.key) || /(?:sk-bayleaf-|dtn_secret_|sk-or-|tk_|admin_|eyJ)[A-Za-z0-9_-]+/.test(v))) fail('platform_credential_forbidden');
+        if ([value, decoded].some(v => v.includes(this.key) || /(?:sk-bayleaf-|dtn_secret_|dtns_|sk-or-|tk_|admin_|eyJ)[A-Za-z0-9_-]+/.test(v))) fail('platform_credential_forbidden');
       }
     }
     const computer = tool!.group === 'computer', opening = name === 'open_session';

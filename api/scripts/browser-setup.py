@@ -699,7 +699,7 @@ def start_code_server(backend_port):
         '--extensions-dir', str(ROOT / 'extensions'), str(Path.home() / 'workspace')], service_environment()
 
 
-SANDBOX_PLACEHOLDER = re.compile(r'dtn_secret_[A-Za-z0-9_-]+')
+SANDBOX_PLACEHOLDER = re.compile(r'(?:dtn_secret_|dtns_)[A-Za-z0-9_-]+')
 
 
 def service_environment():
@@ -736,6 +736,19 @@ def bootstrap_plain_service(backend_port, operation, report):
 def accept_placeholder():
     incoming = ROOT / 'credentials/incoming'
     credential = ROOT / 'credentials/owner-key'
+    secret_env = read('request.json', {}).get('secret_env')
+    if secret_env is not None:
+        if not isinstance(secret_env, str) or not re.fullmatch(r'BAYLEAF_SANDBOX_[A-F0-9]{32}', secret_env):
+            raise Failure('credential_invalid')
+        value = os.environ.get(secret_env, '')
+        if not re.fullmatch(r'dtns_[A-Za-z0-9_-]+', value):
+            raise Failure('credential_missing')
+        # The verifier is never installed. Replace only the managed credential
+        # file, so a copied v0 placeholder is not used in v2.
+        incoming.unlink(missing_ok=True)
+        fd = os.open(incoming, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(value)
     if incoming.exists():
         os.chmod(incoming, 0o600)
         os.replace(incoming, credential)
@@ -914,13 +927,23 @@ def ensure_opencode(operation):
     if binary.is_file() and os.access(binary, os.X_OK):
         return
     request(operation)
-    installer = ROOT / 'releases' / RELEASE / 'lib/node_modules/@openchamber/web/server/lib/opencode/v2-install.js'
+    package = ROOT / 'releases' / RELEASE / 'lib/node_modules/@openchamber/web'
+    # New OpenChamber releases publish the compiled server under build/. An
+    # installed older release can still own the original top-level layout.
+    relative = Path('server/lib/opencode/v2-install.js')
+    installer = next((path for path in (package/'build'/relative, package/relative) if path.is_file()), None)
+    if installer is None:
+        raise Failure('opencode_installation_failed')
     try:
         # The web install API currently rejects a completely absent binary.
         # Invoke the same upstream implementation without reproducing it here.
+        env = environment()
+        # Toolbox can omit SHELL even for a user whose login shell is Bash.
+        # The official installer reads $SHELL under set -u, even without PATH edits.
+        env['SHELL'] = env.get('SHELL') or '/bin/bash'
         command(['node', '--input-type=module', '-e',
             'const {installOpenCodeV2}=await import('+json.dumps(installer.as_uri())+'); await installOpenCodeV2();'],
-            env=environment(), timeout=420)
+            env=env, timeout=420)
         request(operation)
     except Failure:
         raise

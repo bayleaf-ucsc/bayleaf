@@ -262,7 +262,7 @@ export const SandboxStatusResponseSchema = z.object({
   state: z.string().openapi({
     description:
       'Current sandbox state: started, stopped, archived, error, starting, ' +
-      'stopping, archiving — or "none" if no sandbox exists yet.',
+      'stopping, archiving, paused, pausing, deleting, or "none" if no sandbox exists yet.',
   }),
   cpu: z.number().optional().openapi({ description: 'Allocated vCPUs.' }),
   memory: z.number().optional().openapi({ description: 'Allocated memory in GiB.' }),
@@ -273,6 +273,9 @@ export const SandboxStatusResponseSchema = z.object({
   autoArchiveInterval: z.number().optional().openapi({
     description: 'Minutes stopped before the sandbox auto-archives.',
   }),
+  idlePauseMinutes: z.number().optional().openapi({ description: 'Minutes of inactivity before pausing a v2 workspace.' }),
+  reservedCpu: z.number().optional().openapi({ description: 'Reserved vCPUs when the sandbox also has a burst limit.' }),
+  reservedMemory: z.number().optional().openapi({ description: 'Reserved memory in GiB, when distinct from the cap.' }),
   createdAt: z.string().optional().openapi({ description: 'Creation timestamp (ISO 8601).' }),
   updatedAt: z.string().optional().openapi({ description: 'Last update timestamp (ISO 8601).' }),
 }).openapi('SandboxStatusResponse');

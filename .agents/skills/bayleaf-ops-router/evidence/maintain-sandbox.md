@@ -3,6 +3,17 @@
 Dated record of past runs of [`maintain-sandbox.md`](../playbooks/maintain-sandbox.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-27 (#172): With approval, published dual Daytona placeholder
+  support as sandbox-plugin `18b5ac9`. All 37 plugin tests passed and the
+  parent Worker pin was rebuilt. The published Git pin passed the real
+  OpenCode 2.4.1 runtime harness, and the API Wrangler dry-run built.
+  No Worker was deployed.
+
+- 2026-11-27 (#172): Fresh 2 GiB Daytona v2 workspaces installed OpenChamber,
+  OpenCode Web and code-server. OpenChamber 2.8.1 moved its server installer
+  under `build/`; both layouts now work, and the cold install of its own
+  OpenCode passed. Authenticated managed-agent bootstrap was not exercised.
+
 - 2026-11-23 (approved OpenCode Web terminal rollout): unlike Nanobot's post-registration
   reconfiguration, register the origin first so OpenCode launches once with
   exact `--cors`. An HTTP readiness check alone missed the PTY-specific origin

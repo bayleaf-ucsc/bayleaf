@@ -94,6 +94,7 @@
     "PREVIEWS_API_ORIGIN": "https://api.bayleaf.dev",
     "PREVIEWS_DOMAIN": "bayleaf-proxies.dev",
     "PREVIEWS_UPSTREAM_SUFFIXES": ".proxy.daytona.work,.daytonaproxy01.net",
+    "PREVIEWS_V2_UPSTREAM_SUFFIXES": ".ash-1.daytonaproxy03.net",
     // BayLeaf Inboxes facade, issue #97. Community access enabled 2026-10-21.
     // /inboxes is 404 unless exactly "true". Evidence: inbox/QUALIFICATION.md.
     "INBOXES_ENABLED": "true",
@@ -284,6 +285,14 @@
 
     // Sandbox: sandboxed code execution via Daytona
     "DAYTONA_API_URL": "https://app.daytona.io/api",
+    // Staging override: set version to 2 and supply a verified named image.
+    "DAYTONA_API_VERSION": "0",
+    "SANDBOX_MIGRATION_READONLY": "false",
+    "DAYTONA_V2_REGION": "us-east-ash-1",
+    "DAYTONA_V2_IMAGE": "lathe-us-east-ash-1-20261127-5d26f651",
+    "DAYTONA_V2_CREATE_ENABLED": "false",
+    "DAYTONA_V2_REAPER_DELETE": "false",
+    "DAYTONA_V2_RETIRE_V0_CREDENTIALS": "false",
     "DAYTONA_PROXY_URL": "https://proxy.app.daytona.io/toolbox",
     // Unified with chat.bayleaf.dev (Lathe) so a user has one sandbox across
     // both services. See issue #14. The API never reads/writes the volume
