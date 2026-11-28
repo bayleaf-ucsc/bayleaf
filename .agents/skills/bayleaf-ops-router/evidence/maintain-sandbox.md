@@ -3,6 +3,15 @@
 Dated record of past runs of [`maintain-sandbox.md`](../playbooks/maintain-sandbox.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-27 Pacific (#172 follow-up): An imported workspace retained the v0
+  explicit proxy and hid v2's public CA files behind a root-only directory.
+  With the managed launcher repair, ordinary-user Python, Node, and isolated
+  OpenCode 2.4.1 reached BayLeaf config; OpenCode loaded the published plugin.
+  Deployed API `caa3903e`; the managed OpenChamber restart reached Ready.
+  Isolated real ttyd and OpenCode Web returned 401/401/200 through the relay
+  for missing, incorrect, and correct credentials. Adam confirmed that
+  OpenChamber, OpenCode Web, and Shell (ttyd) all work from the dashboard.
+
 - 2026-11-27 Pacific (#172): Switched all 24 verified workspace bindings
   to Daytona v2 with the guarded D1 handoff. API `e2cb0f8d` reopened with
   provisioning enabled and retention deletion disabled. An authenticated

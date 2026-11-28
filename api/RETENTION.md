@@ -324,12 +324,18 @@ semantics, and rollout status.
 
 | User type | Sandbox lifecycle | Auto-delete |
 |---|---|---|
-| Keyed | New creation policy: medium (2 vCPU, 4 GiB RAM, 8 GiB disk), stop after 1 hour idle, archive after 24 hours stopped | Daily deletion after **30 days without Daytona-recorded activity** from 2026-11-14 (90 days from 2026-10-06 until then) |
+| Keyed | Daytona v2: 1 reserved vCPU, burst to 2, 2 GiB RAM, 10 GiB disk cap for new workspaces; pause after one idle hour | **30 days without Daytona-recorded activity**; scheduled deletion is in dry-run during the v2 rollout |
 | Campus Pass | Ephemeral: created per-request, destroyed immediately after | Immediate |
 
 Sandbox content (filesystem, installed packages, user files) lives entirely on
 Daytona's infrastructure, labeled by email. BayLeaf stores only the sandbox ID
 in D1 as a cache (cleared on explicit deletion).
+
+The v2 migration preserved imported allocations and the original inactivity
+clock until new provider activity supersedes the import baseline. Temporary v0
+recovery copies remain at Daytona. Deleting a workspace through the current
+service deletes the v2 workspace; it does not yet remove that separate v0
+copy. See [the migration runbook](DAYTONA-V2.md) for retirement sequencing.
 
 The shared creation policy and 24-hour browser-link simplification were deployed
 on 2026-10-06 (Worker `09db2448-eb9f-4c72-98a7-6e4ac9834125`). Existing machines

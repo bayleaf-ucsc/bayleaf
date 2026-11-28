@@ -298,19 +298,24 @@ export default {
     await cleanupServiceSessions(env);
     if (env.SANDBOX_MIGRATION_READONLY !== 'true') await cleanupSandboxCredentials(env);
     if (event.cron === SANDBOX_REAPER_CRON) {
-      if (env.SANDBOX_MIGRATION_READONLY !== 'true') {
-        const sandboxStartedAt = new Date().toISOString();
-        const report = await reapInactiveSandboxes(env, event.scheduledTime);
-        console.info('Sandbox reaper', report); // Aggregate metadata only; observability stays disabled.
-        const mode = env.SANDBOX_REAPER_MODE === 'delete' && report.dryRun ? 'dry-run' : env.SANDBOX_REAPER_MODE;
-        queueDeletionTelemetry(env, ctx, 'sandbox-reaper', report, sandboxStartedAt, mode);
-        if (report.failed || report.pending) throw new Error('Sandbox reaper needs retry');
+      try {
+        if (env.SANDBOX_MIGRATION_READONLY !== 'true') {
+          const sandboxStartedAt = new Date().toISOString();
+          const report = await reapInactiveSandboxes(env, event.scheduledTime);
+          console.info('Sandbox reaper', report); // Aggregate metadata only; observability stays disabled.
+          const mode = env.SANDBOX_REAPER_MODE === 'delete' && report.dryRun ? 'dry-run' : env.SANDBOX_REAPER_MODE;
+          queueDeletionTelemetry(env, ctx, 'sandbox-reaper', report, sandboxStartedAt, mode);
+          if (report.failed || report.pending) throw new Error('Sandbox reaper needs retry');
+        }
+      } finally {
+        // Account cleanup rechecks sandbox bindings in D1. A failed Daytona
+        // sweep must not prevent unrelated accounts from being processed.
+        const accountsStartedAt = new Date().toISOString();
+        const accounts = await cleanupInactiveUsers(env);
+        console.info('Account retention', accounts); // Aggregate metadata only.
+        queueDeletionTelemetry(env, ctx, 'api-retention', accounts, accountsStartedAt, env.USER_RETENTION_MODE);
+        if (accounts.providerPending || accounts.pending) throw new Error('Account resource cleanup needs retry');
       }
-      const accountsStartedAt = new Date().toISOString();
-      const accounts = await cleanupInactiveUsers(env);
-      console.info('Account retention', accounts); // Aggregate metadata only.
-      queueDeletionTelemetry(env, ctx, 'api-retention', accounts, accountsStartedAt, env.USER_RETENTION_MODE);
-      if (accounts.providerPending || accounts.pending) throw new Error('Account resource cleanup needs retry');
       return;
     }
     if (env.GRANTS_ENABLED === 'true') await cleanupGrants(env);

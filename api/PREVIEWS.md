@@ -201,7 +201,14 @@ access/port permission resource and excludes header values from that resource.
 The shared HTTP/WebSocket header builder applies configured values after the
 ordinary private-owner and origin gates, overwriting browser values
 case-insensitively. Client `Connection` nominations cannot remove these headers.
-Fixed `Authorization`, including Basic, is supported. Public visitors can exercise
+The gateway can send fixed `Authorization`, including Basic, but Daytona v2
+signed previews strip it before the app sees it. Managed ttyd, Jupyter, and
+OpenCode Web instead use the reserved `X-BayLeaf-App-Authorization` header
+after the private owner check. An in-sandbox relay restores the native header
+on loopback, and the app still verifies the credential. Browser requests
+cannot supply this reserved header.
+
+Where the upstream transport preserves the header, public visitors can exercise
 injected credentials, including on public navigation and permitted iframe loads.
 An assertion header has no intrinsic visitor-identity meaning. Unconfigured
 headers follow the passthrough rule below; there is no new assertion namespace.

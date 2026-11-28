@@ -20,6 +20,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -258,11 +259,14 @@ def health():
     try:
         # Ignore proxy environment variables for the loopback readiness check.
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        target = f'http://127.0.0.1:{PORT}' + SERVICES[SERVICE]['health_path']
+        relay = read('request.json', {}).get('app_auth_relay_port')
+        port = relay if relay is not None else PORT
+        credential = 'X-BayLeaf-App-Authorization' if relay is not None else 'Authorization'
+        target = f'http://127.0.0.1:{port}' + SERVICES[SERVICE]['health_path']
         if SERVICE == 'jupyter':
-            target = urllib.request.Request(target, headers={'Authorization':'token '+(ROOT / 'credentials/app-secret').read_text().strip()})
+            target = urllib.request.Request(target, headers={credential:'token '+(ROOT / 'credentials/app-secret').read_text().strip()})
         if SERVICE == 'ttyd':
-            target = urllib.request.Request(target, headers={'Authorization':'Basic '+ttyd_token()})
+            target = urllib.request.Request(target, headers={credential:'Basic '+ttyd_token()})
         if SERVICE == 'opencode-web':
             origin = opencode_preview_origin()
             # Daytona rewrites Host to loopback. Verify the running server
@@ -272,7 +276,7 @@ def health():
             with opener.open(preflight, timeout=3) as response:
                 if response.headers.get('Access-Control-Allow-Origin') != origin:
                     return False
-            target = urllib.request.Request(target, headers={'Authorization':opencode_basic(managed_app_secret())})
+            target = urllib.request.Request(target, headers={credential:opencode_basic(managed_app_secret())})
         with opener.open(target, timeout=3) as response:
             data = json.loads(response.read(65536))
         return adapter('health', data)
@@ -1022,6 +1026,21 @@ def check_browser_port():
             raise Failure('port_in_use') from None
 
 
+def app_auth_relay(req):
+    port = req.get('app_auth_relay_port')
+    if port is None:
+        return None
+    if port != {'jupyter': 8783, 'ttyd': 8784, 'opencode-web': 8785}.get(SERVICE):
+        raise Failure('setup_failed')
+    if 'serve_app_auth_relay' not in globals():
+        source = Path(__file__).with_name('app-auth-relay.py')
+        exec(compile(source.read_text(), 'app-auth-relay.py', 'exec'), globals())
+    try:
+        return serve_app_auth_relay(port, PORT)
+    except OSError:
+        raise Failure('port_in_use') from None
+
+
 def supervise(operation):
     with lock('runtime.lock', wait=10):
         # Stop and spawn share a short critical section, not the lifetime lock.
@@ -1045,7 +1064,9 @@ def supervise(operation):
             runtime.setdefault('timeline', []).append({'step':step, 'at':int(time.time())})
             runtime['timeline'] = runtime['timeline'][-16:]
             atomic('state/runtime.json', runtime)
+        relay = None
         try:
+            relay = app_auth_relay(lease)
             adapter('bootstrap', backend_port, operation, report=report)
             runtime['configured'] = True
             report('checking_readiness')
@@ -1057,6 +1078,10 @@ def supervise(operation):
             atomic('state/runtime.json', runtime)
             raise
         finally:
+            if relay:
+                with contextlib.suppress(OSError):
+                    relay.shutdown(socket.SHUT_RDWR)
+                relay.close()
             terminate(marker)
             child.wait(timeout=15)
 
@@ -1111,6 +1136,45 @@ def install_platform_cli():
             raise Failure('cli_path_unavailable') from None
 
 
+def prepare_v2_egress(req):
+    if not req.get('secret_env'):
+        return
+    # On imports, Daytona can retain its old explicit proxy environment. V2
+    # intercepts egress itself; leaving that dead proxy configured times out.
+    for name in ('HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'):
+        if os.environ.get(name, '').rstrip('/') == 'http://172.20.0.1:18080':
+            del os.environ[name]
+    trust = {
+        'ca-bundle.pem': ('SSL_CERT_FILE', 'CURL_CA_BUNDLE', 'REQUESTS_CA_BUNDLE',
+                          'GIT_SSL_CAINFO', 'DENO_CERT'),
+        'ca.pem': ('NODE_EXTRA_CA_CERTS',),
+    }
+    for filename, variables in trust.items():
+        source = Path('/etc/rlp') / filename
+        if os.access(source, os.R_OK):
+            certificate = source
+        else:
+            # The imported parent directory can be root-only. Copy only the
+            # two provider public trust files, never broaden /etc permissions.
+            try:
+                contents = subprocess.check_output(['sudo', '-n', 'cat', '--', str(source)], timeout=5)
+                if not contents.startswith(b'-----BEGIN CERTIFICATE-----') and b'\n-----BEGIN CERTIFICATE-----' not in contents:
+                    raise ValueError('invalid certificate file')
+                certificate = ROOT / 'state' / ('daytona-v2-' + filename)
+                with tempfile.NamedTemporaryFile(dir=certificate.parent, delete=False) as staging:
+                    temporary = Path(staging.name)
+                    try:
+                        staging.write(contents)
+                        staging.close()
+                        temporary.replace(certificate)
+                    finally:
+                        temporary.unlink(missing_ok=True)
+            except (OSError, subprocess.SubprocessError, ValueError):
+                raise Failure('provider_configuration_unavailable') from None
+        for name in variables:
+            os.environ[name] = str(certificate)
+
+
 def setup(operation):
     with lock('setup.lock'):
         with lock('lifecycle.lock', wait=10):
@@ -1119,11 +1183,14 @@ def setup(operation):
             progress.update('checking')
             progress.thread.start()
         try:
+            prepare_v2_egress(req)
             adapter('install', progress)
             request(operation)  # A slow install may outlive its setup deadline.
             progress.update('configuring')
             install_platform_cli()
             fingerprint = adapter('configure')
+            if req.get('app_auth_relay_port') is not None:
+                fingerprint = hashlib.sha256(f"{fingerprint}:relay:{req['app_auth_relay_port']}".encode()).hexdigest()
             adapter('prepare', operation, progress)
             request(operation)
             req['credential_hash'] = fingerprint

@@ -329,6 +329,11 @@ closure, app restart, or machine sleep. Detached jobs remain the user's concern.
 
 Native Basic authentication protects HTTP and WS. The private gateway injects
 `Authorization: Basic …` from its encrypted registration after owner/origin checks.
+Daytona v2 strips `Authorization` on signed previews. The v2 gateway
+therefore sends the credential in a reserved header to ttyd's relay on
+port 8784, which restores `Authorization` for ttyd to verify. Jupyter and
+OpenCode Web use the same mechanism on ports 8783 and 8785 respectively.
+An existing v2 link is replaced on the next deliberate launch.
 ttyd's authenticated `/token` returns that app-only credential encoded for its
 WS handshake; it is intentionally visible to the owner, not a BayLeaf API key.
 The local ttyd process argv also contains this app credential; programs running

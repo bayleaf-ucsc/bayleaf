@@ -5,13 +5,13 @@ const COMMON_ERRORS = ['insufficient_disk', 'requires_2_gib', 'installation_fail
   'application_not_ready', 'setup_failed', 'setup_timeout'];
 export const SERVICE_DEFS = {
   ttyd: {
-    id: 'ttyd', root: '/home/daytona/.local/share/bayleaf/ttyd', port: 8794,
+    id: 'ttyd', root: '/home/daytona/.local/share/bayleaf/ttyd', port: 8794, relayPort: 8784,
     slot: '__ttyd', credential: true, memoryGiB: 0, driver: 'installer',
     steps: [...COMMON_STEPS, 'installing_ttyd', 'starting_ttyd'],
     errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid', 'release_verification_failed', 'unsupported_architecture'],
   },
   jupyter: {
-    id: 'jupyter', root: '/home/daytona/.local/share/bayleaf/jupyter', port: 8793,
+    id: 'jupyter', root: '/home/daytona/.local/share/bayleaf/jupyter', port: 8793, relayPort: 8783,
     slot: '__jupyter', credential: true, memoryGiB: 0, driver: 'installer',
     steps: [...COMMON_STEPS, 'installing_jupyter', 'starting_jupyter'],
     errors: [...COMMON_ERRORS, 'credential_missing', 'credential_invalid', 'python_311_required', 'managed_file_changed'],
@@ -25,7 +25,7 @@ export const SERVICE_DEFS = {
       'provider_configuration_unavailable', 'opencode_installation_failed'],
   },
   'opencode-web': {
-    id: 'opencode-web', root: '/home/daytona/.local/share/bayleaf/opencode-web', port: 8795,
+    id: 'opencode-web', root: '/home/daytona/.local/share/bayleaf/opencode-web', port: 8795, relayPort: 8785,
     slot: '__opencode-web', credential: true, memoryGiB: 2, driver: 'installer',
     steps: [...COMMON_STEPS, 'installing_opencode', 'starting_opencode_web',
       'waiting_for_opencode', 'connecting_bayleaf', 'loading_tools'],
@@ -66,6 +66,13 @@ export const managedSlot = (slot: string) => Object.values(SERVICE_DEFS).some(de
 export const managedAccess = (_slot: string) => 'private' as const;
 export const managedAppAuth = (slot: string) =>
   slot === '__jupyter' ? 'token' : slot === '__ttyd' ? 'bayleaf' : slot === '__opencode-web' ? 'opencode' : null;
+/** Daytona v2 signed previews strip Authorization. Under v2 the gateway sends a
+ * managed app's own credential in this header to the sandbox relay
+ * (scripts/app-auth-relay.py) on `relayPort`, which restores Authorization for
+ * the app's native check. Legacy Daytona keeps direct Authorization. */
+export const APP_AUTH_RELAY_HEADER = 'X-BayLeaf-App-Authorization';
+export const appAuthRelayPort = (def: ServiceDef, v2: boolean): number | null =>
+  v2 && managedAppAuth(def.slot) && 'relayPort' in def ? def.relayPort : null;
 /** Fixed post-login landing path for a managed slot; never caller-selected. */
 export const managedLanding = (slot: string) => {
   const def = Object.values(SERVICE_DEFS).find(def => def.slot === slot);

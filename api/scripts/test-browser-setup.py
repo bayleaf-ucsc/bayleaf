@@ -18,6 +18,24 @@ spec.loader.exec_module(m)
 
 
 class InstallerTests(unittest.TestCase):
+    def test_v2_import_egress_uses_readable_provider_ca_and_drops_only_legacy_proxy(self):
+        (self.root / 'state').mkdir(exist_ok=True)
+        pem = b'-----BEGIN CERTIFICATE-----\nfixture\n'
+        with (patch.dict(os.environ, {'HTTPS_PROXY': 'http://172.20.0.1:18080/',
+                                      'http_proxy': 'http://custom.test:8080', 'NO_PROXY': 'localhost'}, clear=True),
+              patch.object(m.os, 'access', return_value=False),
+              patch.object(m.subprocess, 'check_output', return_value=pem) as read_ca):
+            m.prepare_v2_egress({'secret_env': 'BAYLEAF_SANDBOX_' + 'A' * 32})
+            self.assertNotIn('HTTPS_PROXY', os.environ)
+            self.assertEqual(os.environ['http_proxy'], 'http://custom.test:8080')
+            self.assertEqual(os.environ['NO_PROXY'], 'localhost')
+            for variable in ('SSL_CERT_FILE', 'NODE_EXTRA_CA_CERTS'):
+                path = Path(os.environ[variable])
+                self.assertEqual(path.read_bytes(), pem)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual([call.args[0][-1] for call in read_ca.call_args_list],
+                             ['/etc/rlp/ca-bundle.pem', '/etc/rlp/ca.pem'])
+
     def test_v2_secret_uses_named_env_and_replaces_only_managed_placeholder(self):
         directory = self.root / 'credentials'
         directory.mkdir()

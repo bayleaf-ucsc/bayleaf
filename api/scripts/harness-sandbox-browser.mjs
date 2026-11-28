@@ -85,7 +85,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
 
 let state = 'archived', lookupFails = false, exists = true, interrupted = false, memory = 4, isPublic = false;
 let creates = 0, wakes = 0, executions = 0, launches = 0, previewCalls = 0;
-let incomingOperation, lastForwarded, toolboxFailures = 0, machineId = 'synthetic-sandbox', wrongService = false;
+let incomingOperation, lastForwarded, lastForwardedUrl, toolboxFailures = 0, machineId = 'synthetic-sandbox', wrongService = false;
 const credentialsUploaded=[];
 const vault = new Map();
 let failCreate=false, creationRequests=0, rejectCreate=0;
@@ -94,6 +94,7 @@ let jupyterAuth, ttydAuth, opencodeAuth, wrongOpencodeOrigin=false, stopFails=fa
 const machine = () => ({ id: machineId, state, memory, public: isPublic, labels: { 'synthetic-chat': email } });
 let bootId = '11111111-2222-4333-8444-555555555555';
 let mountedSecrets = [];
+const v2Uploads = new Map(), signedPorts = [];
 const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
   name: 'browser-harness', modules: true, script: bundle.outputFiles[0].text,
   compatibilityDate: '2025-01-31', compatibilityFlags: ['nodejs_compat'], d1Databases: ['DB'],
@@ -143,9 +144,10 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
         vault.set(name, true);
         return Response.json({ name, allowed_domains: body.allowed_domains }, { status: 201 });
       }
-      if (u.pathname === `${path}/ports/6080/signed-preview-urls` && req.method === 'POST') {
-        previewCalls++;
-        return Response.json({ url: 'https://6080-synthetic.preview.example.test/' });
+      const signed = u.pathname.match(new RegExp(`^${path}/ports/(\\d+)/signed-preview-urls$`));
+      if (signed && req.method === 'POST') {
+        previewCalls++; signedPorts.push(Number(signed[1]));
+        return Response.json({ url: `https://${signed[1]}-synthetic.preview.example.test/` });
       }
     }
     if (v2 && u.hostname === 'proxy.region.daytona.app') {
@@ -154,10 +156,20 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
       if (u.pathname === `${path}/processes`) {
         const { argv } = await req.json();
         let output = '';
+        if (ttydAuth) assert(!argv[2].includes(ttydAuth), 'ttyd secret in command');
         if (argv[2] === 'cat /proc/sys/kernel/random/boot_id') output = `${bootId}\n`;
-        else assert.match(argv[2], /websockify/);
+        else if (argv[2].endsWith('--service ttyd inspect')) output = JSON.stringify({ schema: 1, service: 'ttyd',
+          operation: incomingOperation.operation, updated_at: Math.floor(Date.now() / 1000), phase: 'ready', ready: true, port: 8794 });
+        else if (!/subprocess\.Popen|mkdir -p|mv /.test(argv[2])) assert.match(argv[2], /websockify/);
         executions++;
         return Response.json({ id: 'process', exitCode: 0, logs: { frames: [{ data: output }], eof: true } });
+      }
+      if (u.pathname === `${path}/files/upload`) {
+        const target = u.searchParams.get('path'), text = await (await req.formData()).get('file').text();
+        v2Uploads.set(target, text);
+        if (target.endsWith('request.next.json')) incomingOperation = JSON.parse(text);
+        if (target.endsWith('/ttyd/credentials/app-secret')) ttydAuth = text;
+        return Response.json({});
       }
       if (u.pathname.startsWith(`${path}/computeruse/`)) {
         const action = u.pathname.split('/').at(-1);
@@ -272,7 +284,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
       return Response.json({ exitCode: 0, result: '' });
     }
     if (u.hostname.endsWith('.preview.example.test')) {
-      lastForwarded = Object.fromEntries(req.headers);
+      lastForwarded = Object.fromEntries(req.headers); lastForwardedUrl = req.url;
       if(req.headers.get('upgrade')==='websocket') {
         const pair=new WebSocketPair();pair[1].accept();
         pair[1].addEventListener('message',event=>pair[1].send(event.data));
@@ -380,6 +392,37 @@ try {
         assert.notEqual(reopened.url, ready.url);
         ready = reopened;
       }
+    });
+    await check('v2 ttyd reaches its app-auth relay with a renamed credential the app still verifies', async () => {
+      state = 'running';
+      const tt = action => req(`/__test/${action}?service=ttyd`, action === '__tick' || action === 'status' ? {} : { method: 'POST' });
+      assert.equal((await tt('start')).status, 202);
+      let op;
+      for (let i = 0; i < 14 && op?.phase !== 'ready'; i++) op = await (await tt('__tick')).json();
+      assert.equal(op.phase, 'ready', JSON.stringify(op));
+      assert.equal(signedPorts.at(-1), 8784, 'signed preview targets the relay, not the app port');
+      assert.equal(incomingOperation.app_auth_relay_port, 8784);
+      const ttydRoot = '/home/daytona/.local/share/bayleaf/ttyd';
+      assert.equal(v2Uploads.get(`${ttydRoot}/app-auth-relay.py`), await readFile(root + 'scripts/app-auth-relay.py', 'utf8'));
+      const row = await db.prepare("SELECT * FROM preview_registrations WHERE slot='__ttyd'").first();
+      assert.equal(row.access, 'private');
+      assert(!JSON.stringify([row, op]).includes(ttydAuth));
+      const origin = new URL(op.url).origin;
+      const session = jwt({ aud: origin, generation: row.generation, exp: row.expires_at }, previewSecret);
+      const headers = { Cookie: '__Host-bl-preview-session=' + session, 'X-Test-Origin': origin, 'Sec-Fetch-Site': 'same-origin' };
+      const basic = 'Basic ' + Buffer.from('bayleaf:' + ttydAuth).toString('base64');
+      const previous = lastForwarded;
+      assert.equal((await worker.fetch(op.url + 'token', { headers: { 'X-Test-Origin': origin, 'X-BayLeaf-App-Authorization': basic } })).status, 401);
+      assert.equal(lastForwarded, previous, 'owner gate precedes any credential injection');
+      assert.equal((await worker.fetch(op.url + 'token', { headers: { ...headers, Authorization: 'Bearer spoofed',
+        'X-BayLeaf-App-Authorization': 'Basic spoofed' } })).status, 200);
+      assert.equal(new URL(lastForwardedUrl).hostname.split('-')[0], '8784');
+      assert.equal(lastForwarded['x-bayleaf-app-authorization'], basic);
+      assert.equal(lastForwarded.authorization, 'Bearer spoofed', 'browser Bearer is untouched; Daytona v2 strips it');
+      const socket = await worker.fetch(op.url + 'ws', { headers: { ...headers, Upgrade: 'websocket' } });
+      assert.equal(socket.status, 101); socket.webSocket.accept();
+      assert.equal(lastForwarded['x-bayleaf-app-authorization'], basic); socket.webSocket.close();
+      assert.equal((await worker.fetch(op.url + 'ws', { headers: { ...headers, Upgrade: 'websocket', 'X-Test-Origin': 'https://evil.test' } })).status, 403);
     });
     await check('v2 Stop can cancel an explicit launch before deferred cleanup wakes the machine', async () => {
       state = 'paused'; computerUse = [];

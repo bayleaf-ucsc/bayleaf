@@ -6,6 +6,7 @@
 import type { Bindings } from './types';
 import setupSource from '../scripts/browser-setup.py';
 import jupyterSource from '../scripts/jupyter-adapter.py';
+import appAuthRelaySource from '../scripts/app-auth-relay.py';
 import desktopCleanupSource from '../scripts/desktop-cleanup.py';
 import sandboxCliAssets from '../.sandbox-cli-assets.json';
 import { getAccountRow, activeSandboxCredential, ensureSandboxCredential, revokeSandboxCredentials, rotateSandboxCredential, v2SecretName, v2CredentialApplied } from './sandboxCredentials';
@@ -13,7 +14,7 @@ import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants'
 import { persistentSandboxParams, createPersistentSandbox, createSignedPreview, refreshActivity, lookupOwnedV2Sandbox, wakeV2Sandbox } from './daytona';
 import { daytonaV2, legacySandboxId, getV2Sandbox, v2Execute, v2Toolbox } from './daytonaV2';
 import { registerBrowserPreview, revokeUserPreview, previewsEnabled } from './routes/previews';
-import { SERVICE_DEFS, serviceDef, managedAppAuth, type ServiceId, type ServiceDef } from './serviceDefs';
+import { SERVICE_DEFS, serviceDef, managedAppAuth, appAuthRelayPort, type ServiceId, type ServiceDef } from './serviceDefs';
 
 const LINK_SECONDS = 24 * 3600;
 const SETUP_SECONDS = 20 * 60;
@@ -34,6 +35,7 @@ interface Operation {
   operation: string;
   ownerKeyHash: string;
   appAuthVersion?: 2; // Older operations must finish with the password already uploaded.
+  appAuthRelay?: true; // A registration and its guest must use the same transport.
   phase: Phase;
   step: Step;
   deadline: number;
@@ -337,6 +339,7 @@ export class SandboxBrowser {
     const deadline = now() + LINK_SECONDS;
     const op: Operation = { email, service: def.id, operation: crypto.randomUUID(), ownerKeyHash: hash,
       ...(def.id === 'opencode-web' ? { appAuthVersion: 2 as const } : {}),
+      ...(appAuthRelayPort(def, daytonaV2(this.env)) ? { appAuthRelay: true as const } : {}),
       phase: 'opening', step: 'discover', progress: 'locating_sandbox', deadline,
       setupDeadline: Math.min(now() + SETUP_SECONDS, deadline), updatedAt: now(), startedAt: now(), restart,
       previousFailure: previous?.phase === 'failed' ? { at: previous.updatedAt,
@@ -505,7 +508,8 @@ export class SandboxBrowser {
         }
         const access = row.daytona_sandbox_id ? await activeSandboxCredential(this.env, email, row.daytona_sandbox_id) : null;
         const hash = access?.id ?? row.account_generation;
-        if (u.pathname === '/start' && previous?.phase === 'ready' && previous.deadline > now() && previous.ownerKeyHash === hash && previous.sandboxId && await this.linkDeadline(previous) > now()) {
+        const reuseTransport = !appAuthRelayPort(def, daytonaV2(this.env)) || previous?.appAuthRelay;
+        if (reuseTransport && u.pathname === '/start' && previous?.phase === 'ready' && previous.deadline > now() && previous.ownerKeyHash === hash && previous.sandboxId && await this.linkDeadline(previous) > now()) {
           const m = await machine(this.env, previous.sandboxId);
           if (m?.labels?.[this.env.DAYTONA_DEPLOYMENT_LABEL] === email) {
             if (!daytonaV2(this.env) && m.state === 'started') return this.view(email, def.id);
@@ -549,6 +553,7 @@ export class SandboxBrowser {
   }
   private async advance(op: Operation) {
       const def = SERVICE_DEFS[op.service ?? 'openchamber'];
+      const relayPort = appAuthRelayPort(def, op.appAuthRelay === true && daytonaV2(this.env));
       const ROOT = def.root;
       const INSTALL_STEPS = new Set<string>(def.steps);
       const SETUP_ERRORS = new Set<string>(def.errors);
@@ -726,7 +731,8 @@ export class SandboxBrowser {
             await upload(this.env, id, ROOT, 'request.next.json', JSON.stringify({ operation: op.operation, deadline: op.setupDeadline,
               restart: op.restart, inboxes_enabled: inboxesEnabled, rooms_enabled: roomsEnabled,
               ...(def.credential && daytonaV2(this.env) ? { secret_env: access?.secret_name } : {}),
-              ...(def.id === 'opencode-web' && op.url ? { preview_origin: new URL(op.url).origin } : {}) }));
+              ...(def.id === 'opencode-web' && op.url ? { preview_origin: new URL(op.url).origin } : {}),
+              ...(relayPort ? { app_auth_relay_port: relayPort } : {}) }));
             if (def.credential) {
               if (!access || (daytonaV2(this.env) ? !v2SecretName(access.secret_name) : !access.placeholder)) fail('sandbox_access_unavailable');
               if (access?.placeholder && !daytonaV2(this.env)) await upload(this.env, id, ROOT, 'credentials/incoming', access.placeholder);
@@ -735,6 +741,7 @@ export class SandboxBrowser {
               await upload(this.env, id, ROOT, 'credentials/app-secret', await managedAppSecret(this.env, op));
             }
             if (def.id === 'jupyter') await upload(this.env, id, ROOT, 'jupyter-adapter.py', jupyterSource);
+            if (relayPort) await upload(this.env, id, ROOT, 'app-auth-relay.py', appAuthRelaySource);
             await execute(this.env, id, `bash -c '${def.credential && !daytonaV2(this.env) ? `chmod 600 ${ROOT}/credentials/incoming; ` : ''}mv ${ROOT}/setup.next.py ${ROOT}/setup.py; mv ${ROOT}/request.next.json ${ROOT}/request.json'`);
             op.step = 'inspect'; op.progress = 'checking'; op.launches = 1;
             await this.save(op); // A crash here resumes via inspect, then relaunch.
@@ -792,10 +799,12 @@ export class SandboxBrowser {
               op.url = 'landing' in def ? new URL(def.landing, url).href : url;
               op.deadline = Math.min(op.deadline, existing.expires_at);
             } else {
-              const signed = await createSignedPreview(id, def.port, this.env, Math.max(1, op.deadline - now()));
+              // Under v2, app-auth services are reached through their credential relay.
+              const signed = await createSignedPreview(id, relayPort ?? def.port, this.env,
+                Math.max(1, op.deadline - now()));
               if (!signed) return fail('preview_unavailable');
               const preview = await registerBrowserPreview(this.env, op.email, signed.url, op.deadline, op.ownerKeyHash, def.slot,
-                managedAppAuth(def.slot) ? await managedAppSecret(this.env, op) : undefined);
+                managedAppAuth(def.slot) ? await managedAppSecret(this.env, op) : undefined, relayPort !== null);
               if (preview instanceof Response) fail('preview_unavailable');
               else {
                 // The gateway's post-login redirect uses the same fixed landing path.

@@ -544,7 +544,7 @@ try {
       'X-Pocket': '1', 'X-Unanticipated-App-Header': 'v',
       'CF-Connecting-IP': '203.0.113.9', 'X-Daytona-Preview-Token': 'forged', 'Daytona-Anything': 'x',
       'X-Lathe-Anything': 'x', 'True-Client-IP': '203.0.113.9', 'X-Real-IP': '203.0.113.9',
-      Forwarded: 'for=203.0.113.9', 'Proxy-Authorization': 'Basic eA==', Referer: url + 'secret-path',
+      'X-BayLeaf-App-Authorization': 'Basic forged', Forwarded: 'for=203.0.113.9', 'Proxy-Authorization': 'Basic eA==', Referer: url + 'secret-path',
       'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', 'Accept-Encoding': 'br',
       'Sec-CH-UA': '"Synthetic";v="1"',
     } });
@@ -552,7 +552,7 @@ try {
     assert.equal(lastUpstream.body, 'synthetic upload');
     for (const name of ['authorization', 'x-api-key', 'x-app-token', 'cf-connecting-ip',
       'x-daytona-preview-token', 'daytona-anything', 'x-lathe-anything', 'true-client-ip', 'x-real-ip', 'forwarded',
-      'proxy-authorization', 'referer', 'sec-ch-ua']) assert.equal(lastUpstream.headers[name], undefined, name);
+      'proxy-authorization', 'referer', 'sec-ch-ua', 'x-bayleaf-app-authorization']) assert.equal(lastUpstream.headers[name], undefined, name);
     // Fetch Metadata is forwarded so apps can run their own CSRF checks (Go CrossOriginProtection).
     assert.equal(lastUpstream.headers['sec-fetch-site'], 'same-origin');
     assert.equal(lastUpstream.headers['sec-fetch-mode'], 'cors');

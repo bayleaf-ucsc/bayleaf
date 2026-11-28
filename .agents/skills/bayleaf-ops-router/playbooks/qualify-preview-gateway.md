@@ -58,6 +58,14 @@ the workflow. Contract changes go to the Lathe repo first (its §0).
      carry the capability, with and without `X-Daytona-Trust-Forwarded-Host`.
    - `api/scripts/probe-daytona-proxy.py`: Daytona's default CORS layer, the
      `X-Daytona-Disable-CORS` opt-out, and auth cookies on signed responses.
+   For a managed app using `Authorization`, compare its local authenticated
+   health endpoint with a signed-preview probe against an app that requires a
+   synthetic credential. Confirm the response came from the probe app. A v2
+   signed preview can reach the app while stripping `Authorization`; a passing
+   local health check or noVNC test does not qualify application authentication.
+   For managed v2 apps that need native auth, verify both denial without the
+   relay credential and success with it, including the application's WebSocket.
+   Legacy apps still receive their native Authorization header directly.
 5. **Fetch Metadata check.**
    `uv run --script api/scripts/qualify-preview-fetch-metadata.py` cross-compiles
    a Go app using `http.CrossOriginProtection` (needs local Go >= 1.25; the

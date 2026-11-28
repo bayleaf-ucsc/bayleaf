@@ -31,7 +31,7 @@
     "test:sandbox-upload": "node scripts/test-sandbox-upload.mjs",
     "test:sandbox-reaper": "node scripts/test-sandbox-reaper.mjs",
     "test:daytona-v2": "node scripts/test-daytona-v2.mjs",
-    "test:sandbox-browser": "python3 scripts/test-browser-setup.py && python3 scripts/test-desktop-cleanup.py && node scripts/test-sandbox-policy.mjs && node scripts/harness-sandbox-browser.mjs",
+    "test:sandbox-browser": "python3 scripts/test-browser-setup.py && python3 scripts/test-app-auth-relay.py && python3 scripts/test-desktop-cleanup.py && node scripts/test-sandbox-policy.mjs && node scripts/harness-sandbox-browser.mjs && node scripts/harness-sandbox-browser.mjs --daytona-v2",
     "test:service-sessions": "node scripts/harness-service-sessions.mjs && node ../sandbox/test-worker.mjs",
     "test:user-activity": "node scripts/test-user-activity.mjs",
     "test:user-retention": "node scripts/test-user-retention.mjs",

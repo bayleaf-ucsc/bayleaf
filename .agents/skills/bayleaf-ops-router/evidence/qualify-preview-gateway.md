@@ -3,6 +3,13 @@
 Dated record of past runs of [`qualify-preview-gateway.md`](../playbooks/qualify-preview-gateway.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-27 Pacific (#172 follow-up): ttyd `/token` returned 200 locally
+  with native Basic auth and 401 without it. A temporary Basic-auth fixture
+  behind a Daytona v2 signed preview returned its own 401 both with and
+  without the correct synthetic header. The fixture process was cleaned up.
+  A second signed-preview fixture confirmed the relay header reaches the
+  guest: native Basic auth returned 401 without it and 200 with it.
+
 - 2026-10-27 (bayleaf#118, Lathe #111/#112): header passthrough and app error
   bodies. Harness 39/39 and sandbox-browser 33/33; deployed
   `30d5e815-9621-48ad-906b-a5d9e73fede7`; live script 25/25. Found Daytona's

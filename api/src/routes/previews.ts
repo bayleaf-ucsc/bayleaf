@@ -9,7 +9,7 @@ import type { AppEnv, Bindings } from '../types';
 import { getSession } from '../utils/session';
 import { PreviewRegistrationSchema, PreviewRegistrationResponseSchema, PreviewLabelSchema, PreviewUpstreamHeadersSchema } from '../schemas';
 import { upstreamCookies, wrapApplicationCookies } from '../previewCookies';
-import { managedSlot, managedAccess, managedLanding, managedAppAuth } from '../serviceDefs';
+import { managedSlot, managedAccess, managedLanding, managedAppAuth, APP_AUTH_RELAY_HEADER } from '../serviceDefs';
 import { SERVICE_ORIGIN } from '../serviceSessions';
 import { diagnosticHeaders, publicDiagnosticPage } from '../templates/diagnostics';
 
@@ -59,10 +59,11 @@ const EMBED_CODE_SECONDS = 60;
 // §5.2 step 3, plus mediated ambient headers): routing, identity, transport,
 // provider namespaces, browser-owned Sec-*, and Cookie (rebuilt separately) and
 // Referer (preview hostnames are capabilities). Accept-Encoding stays with the
-// edge, which negotiates and decodes content itself.
+// edge, which negotiates and decodes content itself. The v2 app-credential relay
+// header is only ever configured, never browser-supplied.
 const WRAPPER_CONTROLLED = new Set(['host', 'cookie', 'referer', 'forwarded', 'x-real-ip', 'true-client-ip',
   'connection', 'upgrade', 'keep-alive', 'te', 'trailer', 'transfer-encoding', 'content-length', 'expect',
-  'http2-settings', 'proxy-authorization', 'proxy-authenticate', 'accept-encoding']);
+  'http2-settings', 'proxy-authorization', 'proxy-authenticate', 'accept-encoding', APP_AUTH_RELAY_HEADER.toLowerCase()]);
 const WRAPPER_CONTROLLED_PREFIX = /^(?:x-forwarded-|sec-|cf-|daytona-|x-daytona-|x-lathe-)/;
 // Browser-owned headers forwarded on every request, including navigations.
 // Fetch Metadata is browser-set and truthful; apps use it for their own CSRF
@@ -385,15 +386,16 @@ export async function issueDesktopEmbed(env: Bindings, email: string): Promise<{
   return { url: `https://${r.hostname}${PREFIX}embed?code=${code}`, expires_at: new Date(expires * 1000).toISOString() };
 }
 
-export async function registerBrowserPreview(env: Bindings, email: string, url: string, expiresAt: number, ownerKeyHash: string, slot = '__browser', appSecret?: string) {
+export async function registerBrowserPreview(env: Bindings, email: string, url: string, expiresAt: number, ownerKeyHash: string, slot = '__browser', appSecret?: string, relayAppAuth = false) {
   if (env.BROWSER_SANDBOX_ENABLED !== 'true' || !managedSlot(slot)) return failure(503);
   const auth = managedAppAuth(slot);
   if (!!auth !== (appSecret !== undefined) || (appSecret !== undefined && !/^[a-f0-9]{64}$/.test(appSecret))) return failure(400);
+  // Daytona v2 strips Authorization; its relay restores it for the app's own check.
+  const name = relayAppAuth ? APP_AUTH_RELAY_HEADER : 'Authorization';
   return registerPreview(env, { ...apiPolicy(env), id: '__browser' }, {
     owner: { subject: email, email }, upstream_url: url, access: managedAccess(slot),
-    ...(appSecret ? { upstream_headers: auth === 'token'
-      ? { Authorization: `token ${appSecret}` }
-      : { Authorization: `Basic ${btoa(`${auth}:${appSecret}`)}` } } : {}),
+    ...(appSecret ? { upstream_headers: { [name]: auth === 'token'
+      ? `token ${appSecret}` : `Basic ${btoa(`${auth}:${appSecret}`)}` } } : {}),
   }, slot, { expiresAt, ownerKeyHash });
 }
 

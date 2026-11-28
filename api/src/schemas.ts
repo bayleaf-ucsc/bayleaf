@@ -469,7 +469,7 @@ export const PreviewLabelSchema = z.object({
 }).openapi('PreviewLabel');
 
 export const SandboxExposeRequestSchema = z.object({
-  port: z.number().int().min(3000).max(9999).refine(port => !Object.values(SERVICE_DEFS).some(service => service.port === port), 'Reserved managed-service port').openapi({ example: 5000 }),
+  port: z.number().int().min(3000).max(9999).refine(port => !Object.values(SERVICE_DEFS).some(service => service.port === port || ('relayPort' in service && service.relayPort === port)), 'Reserved managed-service port').openapi({ example: 5000 }),
   access: z.enum(['private', 'public']).default('private'),
   upstream_headers: PreviewUpstreamHeadersSchema.optional(),
 }).strict().openapi('SandboxExposeRequest');
