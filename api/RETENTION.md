@@ -332,10 +332,9 @@ Daytona's infrastructure, labeled by email. BayLeaf stores only the sandbox ID
 in D1 as a cache (cleared on explicit deletion).
 
 The v2 migration preserved imported allocations and the original inactivity
-clock until new provider activity supersedes the import baseline. Temporary v0
-recovery copies remain at Daytona. Deleting a workspace through the current
-service deletes the v2 workspace; it does not yet remove that separate v0
-copy. See [the migration runbook](DAYTONA-V2.md) for retirement sequencing.
+clock until new provider activity supersedes the import baseline. The 24
+temporary v0 recovery workspaces and their 22 legacy sandbox credentials
+have been deleted and verified absent. See [the migration runbook](DAYTONA-V2.md).
 
 The shared creation policy and 24-hour browser-link simplification were deployed
 on 2026-10-06 (Worker `09db2448-eb9f-4c72-98a7-6e4ac9834125`). Existing machines
@@ -359,11 +358,12 @@ preview/SSH interactions, explicit keepalive, and lifecycle state changes. Statu
 reads do not renew activity. This is not an exact last-human-interaction clock.
 
 The daily reaper (`src/sandboxReaper.ts`) is scheduled for 08:17 UTC, separately
-from hourly credential cleanup. `SANDBOX_REAPER_MODE=delete` is deployed;
-`dry-run` inspects without deleting, other values disable the sweep. It scans all inventory
-pages, restricts ownership to `DAYTONA_DEPLOYMENT_LABEL`, and re-fetches candidates
-before deleting only stopped/archived machines with unchanged ownership and
-activity older than the inactivity window (30 days from 2026-11-14; 90 before). Invalid/missing timestamps and active/transitional
+from hourly credential cleanup. Deletion requires both `SANDBOX_REAPER_MODE=delete`
+and `DAYTONA_V2_REAPER_DELETE=true`. Production has the second switch off,
+so the sweep currently reports candidates without deleting them.
+It scans all inventory pages, restricts ownership to `DAYTONA_DEPLOYMENT_LABEL`,
+and re-fetches candidates before deleting only paused or stopped machines with
+unchanged ownership and at least 30 days of inactivity. Invalid or missing timestamps and active or transitional
 machines are skipped. Deletion is verified before clearing cached IDs by exact ID.
 Browser status already treats a missing machine as absent; preview leases expire
 within 24 hours, well before the inactivity cutoff. The reaper does not contact

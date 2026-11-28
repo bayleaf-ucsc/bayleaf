@@ -5,33 +5,17 @@ import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
 const bundle = await build({ stdin: { contents: `
-  export { createPersistentSandbox, persistentSandboxParams } from './src/daytona';
   export { renderSandboxPage } from '../sandbox/page';
   export { SERVICE_DEFS, managedSlot } from './src/serviceDefs';
   export { Hono } from 'hono';`, resolveDir: fileURLToPath(new URL('../', import.meta.url)), loader: 'tsx' },
   bundle: true, write: false, format: 'esm', platform: 'browser',
   jsx: 'automatic', jsxImportSource: 'hono/jsx' });
-const { createPersistentSandbox, persistentSandboxParams, renderSandboxPage, Hono, SERVICE_DEFS, managedSlot } = await import(
+const { renderSandboxPage, Hono, SERVICE_DEFS, managedSlot } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
-const env = { DAYTONA_API_URL: 'https://daytona.example.test/api',
-  DAYTONA_API_KEY: 'synthetic', DAYTONA_DEPLOYMENT_LABEL: 'synthetic-chat', DAYTONA_AUTO_DELETE_MINUTES: '-1' };
 for (const key of ['port','root','slot']) assert.equal(new Set(Object.values(SERVICE_DEFS).map(def=>def[key])).size,Object.keys(SERVICE_DEFS).length);
 assert.equal(SERVICE_DEFS.ttyd.port,8794);
 assert.equal(SERVICE_DEFS.ttyd.credential,true);
 assert.ok(managedSlot('__ttyd'));
-const expected = { language: 'python', snapshot: 'daytona-medium', public: false,
-  name: 'synthetic-chat/owner@example.test', labels: { 'synthetic-chat': 'owner@example.test' },
-  autoStopInterval: 60, autoArchiveInterval: 1440, autoDeleteInterval: -1 };
-assert.deepEqual(persistentSandboxParams('owner@example.test', env), expected);
-const originalFetch = globalThis.fetch;
-try {
-  globalThis.fetch = async (url, options) => {
-    assert.equal(url, env.DAYTONA_API_URL + '/sandbox'); assert.equal(options.method, 'POST');
-    assert.deepEqual(JSON.parse(options.body), expected);
-    return Response.json({ id: 'synthetic', state: 'started' });
-  };
-  assert.equal((await createPersistentSandbox('owner@example.test', env)).id, 'synthetic');
-} finally { globalThis.fetch = originalFetch; }
 
 const app = new Hono();
 app.get('/', () => renderSandboxPage({email:'owner@example.test',name:'Synthetic owner'}));

@@ -59,13 +59,13 @@ const worker = (enabled, binding = true) => ({ name: !binding ? 'api-unbound' : 
   ...(binding ? { serviceBindings: { ROOMS: { name: 'bayleaf-rooms', entrypoint: 'RoomManagement' } } } : {}),
   bindings: { ROOMS_ENABLED: enabled ? 'true' : 'false', CAMPUS_IP_RANGES: '192.0.2.0/24', CAMPUS_POOL_KEY: 'synthetic-pool',
     GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '3600', OIDC_CLIENT_SECRET: 'synthetic-signing', PREVIEWS_ENABLED: 'false',
-    DAYTONA_API_URL: 'https://daytona.example.test', DAYTONA_API_KEY: 'synthetic', DAYTONA_DEPLOYMENT_LABEL: 'synthetic',
+    DAYTONA_API_KEY: 'synthetic', DAYTONA_DEPLOYMENT_LABEL: 'synthetic',
     OPENROUTER_PROVISIONING_KEY: 'synthetic-admin', TINFOIL_ADMIN_KEY: 'synthetic-admin' },
   outboundService: req => {
     const u = new URL(req.url);
     // Sandbox credential authentication is a passive Daytona metadata read; nothing else may leave.
-    if (u.hostname === 'daytona.example.test' && req.method === 'GET' && u.pathname === '/sandbox/one')
-      return Response.json({ id: 'one', state: 'started', labels: { synthetic: 'owner@example.test' } });
+    if (u.hostname === 'api.daytona.com' && req.method === 'GET' && u.pathname === '/sandboxes/sbx_one')
+      return Response.json({ id: 'sbx_one', status: 'running', labels: { synthetic: 'owner@example.test' } });
     outbound.push(u.hostname + u.pathname);
     throw new Error('Rooms facade must not reach ' + u.hostname);
   } });
@@ -78,11 +78,11 @@ try {
     const statements = file === '0009_preview_origin_invalidation.sql' ? sql.split(/;\s*(?=CREATE|$)/) : sql.split(';');
     for (const statement of statements.map(s => s.trim()).filter(Boolean)) await db.prepare(statement).run();
   }
-  for (const [email, key, gen, sandbox] of [['owner@example.test', 'sk-bayleaf-owner', generation, 'one'],
+  for (const [email, key, gen, sandbox] of [['owner@example.test', 'sk-bayleaf-owner', generation, 'sbx_one'],
     ['blank@example.test', 'sk-bayleaf-blank', '', null]])
     await db.prepare('INSERT INTO user_keys(email,bayleaf_token,account_generation,daytona_sandbox_id) VALUES(?,?,?,?)').bind(email, key, gen, sandbox).run();
-  await db.prepare("INSERT INTO sandbox_credentials(id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at) VALUES('sc','owner@example.test','one',?,'s','active',0,0)")
-    .bind(createHash('sha256').update(sandboxBearer).digest('hex')).run();
+  await db.prepare("INSERT INTO sandbox_credentials(id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at) VALUES('sc','owner@example.test','sbx_one',?,?,'active',0,0)")
+    .bind(createHash('sha256').update(sandboxBearer).digest('hex'), 'BAYLEAF_SANDBOX_' + 'C'.repeat(32)).run();
   const api = await mf.getWorker('api'), off = await mf.getWorker('api-off'), unbound = await mf.getWorker('api-unbound');
   const rooms = await mf.getWorker('bayleaf-rooms');
   const calls = async () => (await rooms.fetch('https://stub/')).json();

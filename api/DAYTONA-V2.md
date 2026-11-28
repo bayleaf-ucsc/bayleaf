@@ -5,9 +5,13 @@ Upstream revision: Lathe 2.0.0, `6ea95e3273b53015391fcdb3aabd7a8cdd0b607c`.
 Provider reference: [Daytona v0 import](https://www.daytona.com/docs/migrate-from-v0)
 and [Linux lifecycle](https://www.daytona.com/docs/linux-sandboxes).
 Daytona v2 serves the API and Sandboxes, and Lathe 2.0 serves Chat. The 24
-imported bindings were verified before reopening access. Original v0
-workspaces and credentials are retained; v2 retention deletion remains
-disabled pending dry-run review. Deployed behavior is documented in
+imported bindings were verified before reopening access. The 24 original v0
+workspaces were subsequently deleted and verified absent, as were their 22
+legacy sandbox credentials. The temporary D1 cutover guards were removed;
+all 24 import activity baselines and v2 bindings remain. The runtime uses
+only v2 control-plane and Toolbox endpoints. The migration tools below
+document the historical handoff; they are no longer part of normal operation.
+V2 retention deletion is still disabled pending dry-run review. See
 [SANDBOX-BROWSER.md](SANDBOX-BROWSER.md), [PREVIEWS.md](PREVIEWS.md), and
 [RETENTION.md](RETENTION.md).
 
@@ -24,7 +28,7 @@ disabled pending dry-run review. Deployed behavior is documented in
 | Inactivity, cleanup and monitoring (`src/sandboxReaper.ts`, `src/userRetention.ts`, `src/index.ts`, `chat/probe/`, `telemetry/daytona/`) | Daily reaper scans complete v0 inventory, checks `lastActivityAt` and stable stopped/archived state, refreshes metadata before deleting, and clears D1 only after verifying absence. The fixed passive probe owner is exempt. Credential/preview cleanup runs separately; account retention observes sandbox dependencies. The status probe calls BayLeaf, while Daytona telemetry ingests provider metrics rather than making sandbox calls. | Keep 30 days of inactivity and the probe exemption. Use v2 lifecycle activity and paused/stopped metadata, run dry-run first, and reconcile imported activity with the source so import/testing does not silently renew retention. Verify deletion and compare by exact ID. Qualify metric continuity separately; Daytona does not migrate webhook registrations. |
 | Indirect clients and qualification | Pouch, the sandbox CLI, hosted plugin and Sandboxes UI use BayLeaf HTTP/RPC. Direct v0 qualification callers include `scripts/preview-apps.py`, `preview-ops.py`, `probe-daytona-*.py` in the same directory, and `inbox/qualification/hosted-client-daytona.py`. The probe and CLI do not need Daytona credentials. | Keep downstream API paths; update lifecycle prose/status presentation. Migrate actively used provider qualification scripts and preserve historical evidence as such. Extend provider fixtures in `test-sandbox-policy`, `test-sandbox-reaper`, `test-sandbox-upload`, `test-grant-sandbox-files`, `test-computer`, `harness-sandbox-browser`, `harness-sandbox-credentials`, and `harness-previews`; run docs and frontend checks. Convert staging/rollout scripts and the Chat Code Sandbox skill alongside the tool. |
 
-## Staging and cutover
+## Staging and cutover (historical procedure)
 
 1. Qualify a synthetic v0 archive import and an independently externally
    provisioned v2 sandbox. Use a separate label and staging user. Exercise actual

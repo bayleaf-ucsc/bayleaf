@@ -13,7 +13,7 @@ const { ensureSandbox, lookupOwnedV2Sandbox, createSignedPreview, refreshActivit
   createV2Sandbox, findV2Sandbox, getV2Sandbox, v2Toolbox } =
   await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 
-const env = { DAYTONA_API_VERSION: '2', DAYTONA_API_KEY: 'synthetic',
+const env = { DAYTONA_API_KEY: 'synthetic',
   DAYTONA_DEPLOYMENT_LABEL: 'chat.example.test', DAYTONA_V2_CREATE_ENABLED: 'true',
   DAYTONA_V2_IMAGE: 'fixture', DAYTONA_V2_REGION: 'us-east-ash-1' };
 const email = 'owner@example.test', id = 'sbx_fixture-us-east-ash-1';

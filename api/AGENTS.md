@@ -98,7 +98,7 @@ src/
   index.ts              Entry point: OpenAPIHono app, cors, route mounting, .doc31() spec, error handler
   types.ts              Bindings, Session, OpenRouterKey, UserKeyRow, AppEnv (Hono generics)
   schemas.ts            Zod schemas — single source of truth for validation + OpenAPI spec
-  constants.ts          OIDC discovery helper, OPENROUTER_API, ALT_BACKENDS, DAYTONA defaults, cookie config
+  constants.ts          OIDC discovery helper, OPENROUTER_API, ALT_BACKENDS, cookie config
   openrouter.ts         OpenRouter API primitives (findKeyByHash, createKey, deleteKey, getModelInfo)
   tinfoil.ts            Tinfoil admin primitives (createTinfoilKey, deleteTinfoilKey, sanitizeTinfoilKeyName)
   provision.ts          Row + per-backend key lifecycle: getActiveRow, provisionToken, ensureUserRow,
@@ -616,9 +616,10 @@ HTTP behavior; `examples/campus-pass.html` exercises real cross-origin JS.
 
 ### Daily sandbox inactivity reaper
 
-`src/sandboxReaper.ts` owns the inactivity sweep (90 days; 30 from 2026-11-14) at 08:17 UTC, distinct
-from hourly preview/grant cleanup. Deployed 2026-10-06 with
-`SANDBOX_REAPER_MODE=delete`; `dry-run` inspects without deletion. Read `RETENTION.md`
+`src/sandboxReaper.ts` owns the 30-day inactivity sweep at 08:17 UTC, distinct
+from hourly preview/grant cleanup. Production is in dry-run: deletion requires
+`SANDBOX_REAPER_MODE=delete` and `DAYTONA_V2_REAPER_DELETE=true`.
+Read `RETENTION.md`
 before enabling it or performing initial overdue cleanup. Uses only Daytona
 control-plane metadata, exact deployment-label ownership, complete paginated
 discovery, fresh activity/state checks, and verified deletion before clearing
@@ -637,8 +638,8 @@ there is no new monitoring store or alert integration.
 `schemas.ts`. Read `COMPUTER-USE.md` for design, exposure decisions and qualification.
 These methods never create/start/wake compute or start Desktop. `computerUse.ts`
 owns Toolbox forwarding, generation handles and the no-op floor-control seam.
-The sole non-`/computeruse/*` operation is a constant read-only `/process/execute`
-probe of boot ID, exact Xvfb :0 PID and process starttime, at session open and in
+The sole non-`/computeruse/*` Toolbox operation is a constant read-only process
+probe of boot ID, Xfce session PID and process starttime, at session open and in
 parallel with each screenshot. Never interpolate caller input into that command.
 Screenshot bodies stream through without caching/logging; local error handlers
 must keep content-bearing exceptions away from the generic Worker logger.
@@ -650,8 +651,8 @@ Run `npm run test:computer` and `npm run test:docs`. No adapter parity is claime
 `driver: 'computeruse'`: Toolbox `/computeruse/start|status|stop` instead of the
 installer, never sandbox creation, a fixed private `__desktop` slot (x11vnc has
 no password) and a registry-fixed noVNC landing path that the gateway's login
-callback also uses. Stop revokes first, never wakes, then reaps leaked session
-daemons with `scripts/desktop-cleanup.py`. Read `DESKTOP.md` first.
+callback also uses. Stop revokes first and never wakes a paused machine.
+Read `DESKTOP.md` first.
 
 **CollabMD retired 2026-11-04 Pacific; deployed:** all remaining managed apps
 use private owner-authenticated gateways. Existing user documents and collaboration
@@ -704,10 +705,10 @@ installer failure tests and synthetic workerd/D1/DO lifecycle checks.
 Deployed 2026-10-06: browser links last up to 24 hours without
 continue/stop actions or a work-session extension ritual. Link expiry does not
 kill local applications. Installer layout v2 replaces the prior expiry-killing
-supervisor on the next deliberate setup, not by waking users' machines. Shared
-`persistentSandboxParams` in `daytona.ts` gives both API creation paths medium
-resources, 60-minute idle stop, 1440-minute archive, and disabled Daytona
-auto-delete (daily reaper owns retention). Existing machines are not resized.
+supervisor on the next deliberate setup, not by waking users' machines.
+`createV2Sandbox` in `daytonaV2.ts` gives both creation paths 1 reserved vCPU
+(burst to 2), 2 GiB RAM, a 10 GiB disk cap, and a one-hour idle pause.
+The daily reaper owns inactivity retention. Existing machines are not resized.
 Sleeping-link owner resume is deferred to issue #85.
 
 ### Temporary inference tokens (issue #76)

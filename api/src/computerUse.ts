@@ -4,12 +4,13 @@
 import { sign, verify } from 'hono/jwt';
 import type { Bindings, UserKeyRow } from './types';
 import { credentialHash } from './sandboxCredentials';
-import { DAYTONA_DEFAULT_PROXY_URL } from './constants';
-import { daytonaV2, v2Execute, v2Toolbox } from './daytonaV2';
+import { v2Execute, v2Toolbox } from './daytonaV2';
 
 // Constant, read-only probe. No shell arguments, paths or code come from callers.
+// Xvfb is outside the guest process view, so identify the desktop session,
+// which ends when its display connection dies. Fail closed on multiple sessions.
 // Read stat after the last ')' because comm can itself contain parentheses.
-const generationCode = (managedProcess: 'Xvfb' | 'xfce4-session') => `import json, pathlib, signal
+export const COMPUTER_GENERATION_CODE = `import json, pathlib, signal
 signal.alarm(3)
 p = pathlib.Path("/proc")
 boot = (p / "sys/kernel/random/boot_id").read_text().strip()
@@ -17,19 +18,12 @@ found = []
 for d in p.iterdir():
     if not d.name.isdecimal(): continue
     try:
-        if (d / "comm").read_text().strip() != "${managedProcess}": continue
-${managedProcess === 'Xvfb' ? `        args = (d / "cmdline").read_bytes().split(b"\\0")
-        if len(args) < 2 or args[1] != b":0": continue
-` : ''}\
+        if (d / "comm").read_text().strip() != "xfce4-session": continue
         stat = (d / "stat").read_text()
         start = stat[stat.rfind(")") + 2:].split()[19]
         found.append([boot, d.name, start])
     except (FileNotFoundError, ProcessLookupError): pass
 print(json.dumps(found, separators=(",", ":")))`;
-export const COMPUTER_GENERATION_COMMAND = `python3 -c '${generationCode('Xvfb')}'`;
-// v2's Xvfb is outside the guest process view. Its desktop session is visible
-// and ends when the display connection dies. Fail closed on multiple sessions.
-const V2_GENERATION_CODE = generationCode('xfce4-session');
 
 export function computerError(status: 400 | 401 | 403 | 409 | 410 | 423 | 502, code: string, message: string) {
   return Response.json({ error: { code, message } }, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -42,12 +36,11 @@ export async function computerToolbox(env: Bindings, id: string, path: string, b
   try {
     const init: RequestInit = {
       method: body === undefined ? 'GET' : 'POST',
-      headers: { Authorization: `Bearer ${env.DAYTONA_API_KEY}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
-      redirect: 'manual', signal: AbortSignal.timeout(8000), cache: 'no-store',
+      signal: AbortSignal.timeout(8000), cache: 'no-store',
     };
-    if (daytonaV2(env)) return await v2Toolbox(env, { id, state: 'started', toolboxProxyUrl: proxy }, path, init);
-    return await fetch(`${(proxy || env.DAYTONA_PROXY_URL || DAYTONA_DEFAULT_PROXY_URL).replace(/\/+$/, '')}/${encodeURIComponent(id)}${path}`, init);
+    return await v2Toolbox(env, { id, state: 'started', toolboxProxyUrl: proxy }, path, init);
   } catch { return null; }
 }
 
@@ -60,28 +53,15 @@ export function field(value: unknown, name: string): unknown {
 
 export async function desktopGeneration(env: Bindings, id: string, proxy?: string): Promise<string | Response> {
   try {
-    let data: unknown;
-    if (daytonaV2(env)) {
-      const m = { id, state: 'started', toolboxProxyUrl: proxy };
-      const [status, result] = await Promise.all([
-        v2Toolbox(env, m, '/computeruse/status', { signal: AbortSignal.timeout(8000) }),
-        v2Execute(env, m, ['python3', '-c', V2_GENERATION_CODE], 5000),
-      ]);
-      if (!status.ok) { await status.body?.cancel(); return desktopMissing(); }
-      if (field(await status.json(), 'status') !== 'active') return desktopMissing();
-      data = result;
-    } else {
-      const r = await computerToolbox(env, id, '/process/execute', { command: COMPUTER_GENERATION_COMMAND, timeout: 5000 }, proxy);
-      if (!r?.ok) {
-        const status = r?.status;
-        await r?.body?.cancel();
-        return computerError(status === 404 || status === 410 ? 410 : 409,
-          'sandbox_not_running', 'Toolbox unavailable. Start the sandbox or Desktop deliberately, then open a new session.');
-      }
-      data = await r.json();
-    }
-    const output = field(data, 'result') ?? field(data, 'output');
-    if (field(data, 'exitCode') !== 0 || typeof output !== 'string' || output.length > 512) return desktopMissing();
+    const m = { id, state: 'started', toolboxProxyUrl: proxy };
+    const [status, result] = await Promise.all([
+      v2Toolbox(env, m, '/computeruse/status', { signal: AbortSignal.timeout(8000), cache: 'no-store' }),
+      v2Execute(env, m, ['python3', '-c', COMPUTER_GENERATION_CODE], 5000),
+    ]);
+    if (!status.ok) { await status.body?.cancel(); return desktopMissing(); }
+    if (field(await status.json(), 'status') !== 'active') return desktopMissing();
+    const { exitCode, output } = result;
+    if (exitCode !== 0 || typeof output !== 'string' || output.length > 512) return desktopMissing();
     const triples: unknown = JSON.parse(output);
     if (!Array.isArray(triples) || triples.length !== 1 || !Array.isArray(triples[0]) || triples[0].length !== 3) return desktopMissing();
     const [boot, pid, start] = triples[0];

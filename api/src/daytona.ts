@@ -1,20 +1,17 @@
 /**
  * Daytona Sandbox Provider Client
  *
- * Module-level helpers for managing sandboxes via the Daytona control plane
- * and toolbox proxy APIs. Mirrors the pattern of openrouter.ts — all
- * functions are stateless and take env bindings as a parameter.
- *
- * Control plane: POST/GET/DELETE /sandbox, POST /sandbox/{id}/start
- * Toolbox proxy: POST /process/execute, GET /files/download, POST /files/upload
+ * Module-level helpers for managing sandboxes through Daytona v2. Mirrors the
+ * pattern of openrouter.ts — all functions are stateless and take env
+ * bindings as a parameter. The v2 wire contract lives in daytonaV2.ts; this
+ * module owns lifecycle orchestration and the owner-facing operations.
  *
  * All fetch() calls are non-blocking (Workers global fetch is always async).
  */
 
 import type { Bindings } from './types';
 import { revokeSandboxCredentials } from './sandboxCredentials';
-import { DAYTONA_DEFAULT_API_URL, DAYTONA_DEFAULT_PROXY_URL } from './constants';
-import { daytonaV2, getV2Sandbox, findV2Sandbox, createV2Sandbox, v2Call, v2SandboxPath, v2Toolbox, v2Execute, v2UploadFile } from './daytonaV2';
+import { getV2Sandbox, findV2Sandbox, createV2Sandbox, v2Call, v2SandboxPath, v2Toolbox, v2Execute, v2UploadFile } from './daytonaV2';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -53,21 +50,6 @@ export interface ExecResult {
 
 // ── Internal helpers ───────────────────────────────────────────────
 
-function apiUrl(env: Bindings, path: string): string {
-  return `${(env.DAYTONA_API_URL || DAYTONA_DEFAULT_API_URL).replace(/\/+$/, '')}${path}`;
-}
-
-function toolboxUrl(env: Bindings, sandboxId: string, path: string): string {
-  return `${(env.DAYTONA_PROXY_URL || DAYTONA_DEFAULT_PROXY_URL).replace(/\/+$/, '')}/${sandboxId}${path}`;
-}
-
-function authHeaders(env: Bindings): Record<string, string> {
-  return {
-    'Authorization': `Bearer ${env.DAYTONA_API_KEY}`,
-    'Content-Type': 'application/json',
-  };
-}
-
 /**
  * Sleep without blocking the event loop.
  * Uses scheduler.wait when available (Cloudflare Workers), falls back to
@@ -84,102 +66,25 @@ function sleep(ms: number): Promise<void> {
 // ── Sandbox CRUD ───────────────────────────────────────────────────
 
 /**
- * Find an existing sandbox for a keyed user by label.
- * Returns null if none exists.
- *
- * Uses the `labels` (plural) query parameter with a JSON-encoded object
- * so the Daytona API performs an exact key=value match.  After filtering
- * server-side we also verify labels client-side and guard against
- * duplicates — see https://github.com/rndmcnlly/lathe/issues/2.
- *
- * Response-shape note (Daytona pagination migration, May 2026): the
- * `GET /sandbox` endpoint is transitioning from a flat `SandboxInfo[]`
- * to a paginated envelope (`{ items: SandboxInfo[], ... }`) on May 24,
- * 2026. We normalize both shapes here so the code keeps working across
- * the cutover. Since we filter by exact label, at most one sandbox is
- * expected to match — pagination doesn't need to be traversed.
+ * Find an existing sandbox for a keyed user by exact deployment label.
+ * Returns null if none exists; more than one match throws.
  */
 export async function findSandboxByLabel(
   email: string,
   env: Bindings,
 ): Promise<SandboxInfo | null> {
-  if (daytonaV2(env)) return findV2Sandbox(email, env);
-  const deployLabel = env.DAYTONA_DEPLOYMENT_LABEL;
-  const labelsFilter = JSON.stringify({ [deployLabel]: email });
-  const url = `${apiUrl(env, '/sandbox')}?labels=${encodeURIComponent(labelsFilter)}`;
-  const resp = await fetch(url, { headers: authHeaders(env) });
-  if (!resp.ok) return null;
-
-  // Accept either the legacy flat array or the new paginated envelope.
-  // The envelope wraps results in `items`; cursor/page metadata is ignored
-  // because exact-label filtering yields ≤1 match (well within any page size).
-  const body = await resp.json() as SandboxInfo[] | { items?: SandboxInfo[] };
-  const sandboxes: SandboxInfo[] = Array.isArray(body)
-    ? body
-    : (body?.items ?? []);
-
-  // Client-side verification: only keep sandboxes whose labels exactly match
-  const matches = sandboxes.filter(
-    s => s.labels?.[deployLabel] === email,
-  );
-
-  if (matches.length > 1) {
-    const ids = matches.map(s => s.id).join(', ');
-    throw new Error(
-      `Found ${matches.length} sandboxes labelled ${deployLabel}=${email} (${ids}). ` +
-      `Expected at most 1. Delete the extras in the Daytona dashboard and try again.`,
-    );
-  }
-
-  return matches[0] ?? null;
+  return findV2Sandbox(email, env);
 }
 
 /**
- * Create a persistent sandbox for a keyed user.
- * Auto-stops after 1 hour idle, auto-archives after 24 hours stopped,
- * Daytona auto-delete is disabled; the daily BayLeaf reaper owns inactivity retention.
+ * Create a persistent sandbox for a keyed user. The v2 lifecycle policy pauses
+ * after an hour idle; the daily BayLeaf reaper owns inactivity retention.
  */
 export async function createPersistentSandbox(
   email: string,
   env: Bindings,
 ): Promise<SandboxInfo> {
-  if (daytonaV2(env)) return createV2Sandbox(email, env);
-  const resp = await fetch(apiUrl(env, '/sandbox'), {
-    method: 'POST',
-    headers: authHeaders(env),
-    body: JSON.stringify(persistentSandboxParams(email, env)),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Failed to create sandbox: HTTP ${resp.status} — ${text.slice(0, 200)}`);
-  }
-
-  return await resp.json() as SandboxInfo;
-}
-
-/** One creation policy for ordinary API execution and managed browser setup. */
-export function persistentSandboxParams(email: string, env: Bindings) {
-  return {
-    language: 'python', snapshot: 'daytona-medium', public: false,
-    name: `${env.DAYTONA_DEPLOYMENT_LABEL}/${email}`,
-    labels: { [env.DAYTONA_DEPLOYMENT_LABEL]: email },
-    autoStopInterval: 60, autoArchiveInterval: 1440,
-    autoDeleteInterval: parseInt(env.DAYTONA_AUTO_DELETE_MINUTES, 10) || -1,
-  };
-}
-
-/** Start a stopped or archived sandbox. */
-export async function startSandbox(id: string, env: Bindings): Promise<void> {
-  const resp = await fetch(apiUrl(env, `/sandbox/${id}/start`), {
-    method: 'POST',
-    headers: authHeaders(env),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Failed to start sandbox: HTTP ${resp.status} — ${text.slice(0, 200)}`);
-  }
+  return createV2Sandbox(email, env);
 }
 
 /** Wake only a stable idle state; paused v2 machines keep their processes. */
@@ -190,77 +95,37 @@ export async function wakeV2Sandbox(m: SandboxInfo, env: Bindings): Promise<void
   if (!r.ok && r.status !== 409) throw new Error(`Daytona wake failed (${r.status})`);
 }
 
-/** Delete a sandbox entirely. */
+/** Delete a sandbox entirely, confirming that Daytona no longer reports it. */
 export async function deleteSandbox(id: string, env: Bindings): Promise<void> {
   await revokeSandboxCredentials(env, id);
-  if (daytonaV2(env)) {
-    const r = await v2Call(env, v2SandboxPath(id), 'DELETE');
-    await r.body?.cancel();
-    if (!r.ok && r.status !== 404) throw new Error(`Daytona delete failed (${r.status})`);
-    const deadline = Date.now() + 30_000;
-    while (Date.now() < deadline) {
-      if (!await getV2Sandbox(id, env)) return;
-      await sleep(1000);
-    }
-    throw new Error('Daytona deletion is pending');
+  const r = await v2Call(env, v2SandboxPath(id), 'DELETE');
+  await r.body?.cancel();
+  if (!r.ok && r.status !== 404) throw new Error(`Daytona delete failed (${r.status})`);
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (!await getV2Sandbox(id, env)) return;
+    await sleep(1000);
   }
-  const resp = await fetch(apiUrl(env, `/sandbox/${id}`), {
-    method: 'DELETE',
-    headers: authHeaders(env),
-  });
-
-  // 404 is fine — sandbox already gone
-  if (!resp.ok && resp.status !== 404) {
-    const text = await resp.text();
-    throw new Error(`Failed to delete sandbox: HTTP ${resp.status} — ${text.slice(0, 200)}`);
-  }
+  throw new Error('Daytona deletion is pending');
 }
 
 /**
  * Refresh the sandbox's last-activity timestamp.
  *
- * Resets the auto-stop inactivity timer without changing runtime state.
- * Daytona counts only "external interactions" (toolbox requests, lifecycle
- * changes, previews, SSH) as activity; internal processes do not reset the
- * timer. This endpoint is the purpose-built way to signal activity from an
- * external orchestrator — cheaper than issuing a no-op exec.
- * See https://www.daytona.io/docs/en/sandboxes.md (Update sandbox last activity).
+ * Resets the idle timer without changing runtime state. Daytona counts only
+ * external interactions as activity; internal processes do not reset it.
  */
 export async function refreshActivity(id: string, env: Bindings): Promise<void> {
-  if (daytonaV2(env)) {
-    const r = await v2Call(env, `${v2SandboxPath(id)}/reset-idle-timer`, 'POST');
-    await r.body?.cancel();
-    if (!r.ok) throw new Error(`Daytona idle timer reset failed (${r.status})`);
-    return;
-  }
-  const resp = await fetch(apiUrl(env, `/sandbox/${id}/last-activity`), {
-    method: 'POST',
-    headers: authHeaders(env),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Failed to refresh sandbox activity: HTTP ${resp.status} — ${text.slice(0, 200)}`);
-  }
+  const r = await v2Call(env, `${v2SandboxPath(id)}/reset-idle-timer`, 'POST');
+  await r.body?.cancel();
+  if (!r.ok) throw new Error(`Daytona idle timer reset failed (${r.status})`);
 }
 
 /** Get current sandbox info (state, etc.). */
 export async function getSandboxInfo(id: string, env: Bindings): Promise<SandboxInfo> {
-  if (daytonaV2(env)) {
-    const info = await getV2Sandbox(id, env);
-    if (!info) throw new Error('Daytona sandbox not found');
-    return info;
-  }
-  const resp = await fetch(apiUrl(env, `/sandbox/${id}`), {
-    headers: authHeaders(env),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Failed to get sandbox info: HTTP ${resp.status} — ${text.slice(0, 200)}`);
-  }
-
-  return await resp.json() as SandboxInfo;
+  const info = await getV2Sandbox(id, env);
+  if (!info) throw new Error('Daytona sandbox not found');
+  return info;
 }
 
 /** Port-scoped credential, kept server-side by the owner-authenticated wrapper. */
@@ -268,12 +133,8 @@ export async function createSignedPreview(
   id: string, port: number, env: Bindings, expiresInSeconds = 86400,
 ): Promise<{ url: string } | null> {
   try {
-    const response = daytonaV2(env)
-      ? await v2Call(env, `${v2SandboxPath(id)}/ports/${port}/signed-preview-urls`, 'POST', { expires_in_seconds: expiresInSeconds })
-      : await fetch(apiUrl(env,
-      `/sandbox/${encodeURIComponent(id)}/ports/${port}/signed-preview-url?expiresInSeconds=${expiresInSeconds}`), {
-      headers: authHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(15_000),
-    });
+    const response = await v2Call(env, `${v2SandboxPath(id)}/ports/${port}/signed-preview-urls`, 'POST',
+      { expires_in_seconds: expiresInSeconds });
     if (!response.ok) { await response.body?.cancel(); return null; }
     const data = await response.json() as { url?: string };
     return typeof data.url === 'string' ? { url: data.url } : null;
@@ -282,81 +143,15 @@ export async function createSignedPreview(
 
 // ── Lifecycle orchestration ────────────────────────────────────────
 
-/**
- * Poll the toolbox daemon until it responds to an echo probe,
- * then ensure the workspace directory exists.
- * Uses exponential backoff to avoid hammering the API.
- */
-export async function waitForReady(id: string, env: Bindings): Promise<void> {
-  const maxAttempts = 30;
-  let interval = 1000;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const resp = await fetch(toolboxUrl(env, id, '/process/execute'), {
-        method: 'POST',
-        headers: authHeaders(env),
-        body: JSON.stringify({ command: 'echo ready', timeout: 5000 }),
-      });
-
-      if (resp.ok) {
-        const data = await resp.json() as { exitCode?: number; result?: string };
-        if (data.exitCode === 0 && (data.result ?? '').includes('ready')) {
-          // Ensure workspace directory exists
-          await fetch(toolboxUrl(env, id, '/process/execute'), {
-            method: 'POST',
-            headers: authHeaders(env),
-            body: JSON.stringify({
-              command: 'mkdir -p /home/daytona/workspace',
-              timeout: 5000,
-            }),
-          });
-          return;
-        }
-      }
-    } catch {
-      // Toolbox not ready yet — keep polling
-    }
-
-    await sleep(interval);
-    interval = Math.min(interval * 1.2, 5000);
-  }
-
-  throw new Error('Sandbox started but toolbox daemon did not become responsive (30s)');
-}
-
-/**
- * Poll the control plane until the sandbox reaches 'started' state.
- * Uses exponential backoff. 120s deadline.
- */
-export async function waitForStarted(id: string, env: Bindings): Promise<void> {
-  const deadline = Date.now() + 120_000;
-  let interval = 1000;
-
-  while (Date.now() < deadline) {
-    await sleep(interval);
-
-    const info = await getSandboxInfo(id, env);
-
-    if (info.state === 'started') return;
-    if (info.state === 'error') {
-      throw new Error(`Sandbox entered error state: ${info.errorReason ?? 'unknown'}`);
-    }
-
-    interval = Math.min(interval * 1.2, 5000);
-  }
-
-  throw new Error('Timed out waiting for sandbox to start (120s)');
-}
-
 export interface EnsureResult {
   id: string;
   /** True when the ID differs from cachedId — caller should update D1. */
   changed: boolean;
 }
 
-/** A v0 cached ID is a migration hold. Passive or active traffic must never
- * silently rebind it to a different filesystem or clear it on provider error. */
+/** A legacy (pre-v2) cached ID is a migration hold. Passive or active traffic
+ * must never silently rebind it to a different filesystem or clear it on
+ * provider error: getV2Sandbox refuses it before any provider call. */
 export async function lookupOwnedV2Sandbox(email: string, env: Bindings, cachedId?: string | null) {
   if (cachedId) {
     const current = await getV2Sandbox(cachedId, env);
@@ -368,7 +163,16 @@ export async function lookupOwnedV2Sandbox(email: string, env: Bindings, cachedI
   return findV2Sandbox(email, env);
 }
 
-async function ensureV2Sandbox(email: string, env: Bindings, cachedId?: string | null): Promise<EnsureResult> {
+/**
+ * Ensure a persistent sandbox is running for the given email: cached ID or
+ * exact-label lookup, create if missing, wake if paused or stopped, then wait
+ * until Toolbox can prepare the workspace directory.
+ */
+export async function ensureSandbox(
+  email: string,
+  env: Bindings,
+  cachedId?: string | null,
+): Promise<EnsureResult> {
   let m = await lookupOwnedV2Sandbox(email, env, cachedId) ?? await createV2Sandbox(email, env);
   const id = m.id;
   const deadline = Date.now() + 120_000;
@@ -394,79 +198,15 @@ async function ensureV2Sandbox(email: string, env: Bindings, cachedId?: string |
   throw new Error('Timed out preparing Daytona sandbox');
 }
 
-/**
- * Ensure a persistent sandbox is running for the given email.
- * Handles the full lifecycle: cached-ID fast-path → find-by-label
- * → create if missing → start if stopped/archived → wait for toolbox.
- *
- * When cachedId is provided, we skip the label lookup and go straight
- * to the control plane to check its state.  If the cached ID is stale
- * (404), we fall back to the label-based lookup (and then creation).
- */
-export async function ensureSandbox(
-  email: string,
-  env: Bindings,
-  cachedId?: string | null,
-): Promise<EnsureResult> {
-  if (daytonaV2(env)) return ensureV2Sandbox(email, env, cachedId);
-  let sandbox: SandboxInfo | null = null;
-
-  // Fast path: try the cached ID first (saves a label-lookup round-trip)
-  if (cachedId) {
-    try {
-      sandbox = await getSandboxInfo(cachedId, env);
-    } catch {
-      // Stale cached ID (deleted externally, 404, etc.) — fall through
-      sandbox = null;
-    }
-  }
-
-  // Slow path: label-based lookup
-  if (!sandbox) {
-    sandbox = await findSandboxByLabel(email, env);
-  }
-
-  // No sandbox exists at all — create one
-  if (!sandbox) {
-    sandbox = await createPersistentSandbox(email, env);
-  }
-
-  const { id, state } = sandbox;
-  const changed = id !== cachedId;
-
-  if (state === 'started') {
-    await waitForReady(id, env);
-    return { id, changed };
-  }
-
-  if (state === 'stopped' || state === 'archived') {
-    await startSandbox(id, env);
-  } else if (state === 'error' && sandbox.recoverable) {
-    await fetch(apiUrl(env, `/sandbox/${id}/recover`), {
-      method: 'POST',
-      headers: authHeaders(env),
-    });
-    await startSandbox(id, env);
-  } else if (state === 'starting' || state === 'stopping' || state === 'archiving') {
-    // Already transitioning — just wait
-  } else if (state === 'error') {
-    throw new Error(`Sandbox is in non-recoverable error state: ${sandbox.errorReason ?? 'unknown'}`);
-  }
-
-  await waitForStarted(id, env);
-  await waitForReady(id, env);
-  return { id, changed };
-}
-
 // ── Toolbox operations ─────────────────────────────────────────────
 
 /**
  * Execute a bash command in a sandbox.
  *
- * Writes the command verbatim to a request-scoped temp script with
+ * Uploads the command verbatim to a request-scoped temp script with
  * `set -e -o pipefail` and non-interactive env vars, then executes it.
- * This avoids quoting/escaping issues with Daytona's argv-splitting execute
- * API while keeping concurrent requests isolated from one another.
+ * Passing only the script path avoids argv size limits and quoting issues
+ * while keeping concurrent requests isolated from one another.
  *
  * No output truncation — full stdout/stderr is returned.
  */
@@ -489,73 +229,17 @@ export async function execCommand(
   const scriptPath = `/tmp/bayleaf-exec-${crypto.randomUUID()}.sh`;
   const scriptBlob = new Blob([script], { type: 'application/octet-stream' });
 
-  if (daytonaV2(env)) {
-    const m = await getSandboxInfo(sandboxId, env);
-    try {
-      // Linux limits each argv entry; pass only the path even for large scripts.
-      await v2UploadFile(env, m, scriptPath, scriptBlob);
-      return await v2Execute(env, m, ['bash', scriptPath], 120_000, workdir);
-    } finally {
-      try {
-        await v2Execute(env, m, ['rm', '-f', '--', scriptPath], 5_000);
-      } catch {
-        // Upload or execution may have failed after writing the file. Cleanup
-        // is best-effort and must never replace the command's result or error.
-      }
-    }
-  }
-
-  // Upload the script via multipart form
-  const uploadForm = new FormData();
-  uploadForm.append('file', scriptBlob, 'file');
-
-  const uploadResp = await fetch(
-    `${toolboxUrl(env, sandboxId, '/files/upload')}?path=${encodeURIComponent(scriptPath)}`,
-    {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${env.DAYTONA_API_KEY}` },
-      body: uploadForm,
-    },
-  );
-
-  if (!uploadResp.ok) {
-    const text = await uploadResp.text();
-    throw new Error(`Command upload failed: HTTP ${uploadResp.status} — ${text.slice(0, 200)}`);
-  }
-
+  const m = await getSandboxInfo(sandboxId, env);
   try {
-    const resp = await fetch(toolboxUrl(env, sandboxId, '/process/execute'), {
-      method: 'POST',
-      headers: authHeaders(env),
-      body: JSON.stringify({
-        command: `bash ${scriptPath}`,
-        cwd: workdir,
-        timeout: 120000,
-      }),
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      throw new Error(`Command execution failed: HTTP ${resp.status} — ${text.slice(0, 200)}`);
-    }
-
-    const data = await resp.json() as { result?: string; exitCode?: number };
-    return {
-      exitCode: data.exitCode ?? -1,
-      output: data.result ?? '',
-    };
+    // Linux limits each argv entry; pass only the path even for large scripts.
+    await v2UploadFile(env, m, scriptPath, scriptBlob);
+    return await v2Execute(env, m, ['bash', scriptPath], 120_000, workdir);
   } finally {
     try {
-      await fetch(toolboxUrl(env, sandboxId, '/process/execute'), {
-        method: 'POST',
-        headers: authHeaders(env),
-        body: JSON.stringify({
-          command: `rm -f -- ${scriptPath}`,
-          timeout: 5000,
-        }),
-      });
+      await v2Execute(env, m, ['rm', '-f', '--', scriptPath], 5_000);
     } catch {
-      // Best-effort cleanup; never replace the command's result or error.
+      // Upload or execution may have failed after writing the file. Cleanup
+      // is best-effort and must never replace the command's result or error.
     }
   }
 }
@@ -569,19 +253,14 @@ export async function downloadFile(
   path: string,
   env: Bindings,
 ): Promise<Response> {
-  if (daytonaV2(env)) return v2Toolbox(env, await getSandboxInfo(sandboxId, env),
+  return v2Toolbox(env, await getSandboxInfo(sandboxId, env),
     `/files/download?${new URLSearchParams({ path })}`, { signal: AbortSignal.timeout(120_000) });
-  const url = `${toolboxUrl(env, sandboxId, '/files/download')}?path=${encodeURIComponent(path)}`;
-  return fetch(url, {
-    headers: { 'Authorization': `Bearer ${env.DAYTONA_API_KEY}` },
-  });
 }
 
 /**
- * Paths uploadFile cannot pass safely to Toolbox's execute. It splits argv
- * shell-style, honoring single quotes (see sandboxBrowser.ts), but runs no
- * shell, so single-quoting is the whole defense and a quote inside the path
- * would break out of it. Control characters are refused alongside.
+ * Paths uploadFile refuses. Toolbox takes argv directly, so quoting is not the
+ * defense here; refusing quotes and control characters keeps the accepted path
+ * set unchanged for callers and keeps paths unambiguous in diagnostics.
  */
 export function unsafeUploadPath(path: string): boolean {
   return /['\x00-\x1f\x7f]/.test(path);
@@ -598,44 +277,11 @@ export async function uploadFile(
   env: Bindings,
 ): Promise<void> {
   if (unsafeUploadPath(path)) throw new Error('Unsafe upload path.');
-  // Ensure parent directory exists. Quoted as one argument: unquoted, a path
-  // with spaces became several mkdir arguments, creating directories elsewhere.
   const parent = path.replace(/\/[^/]+$/, '');
-  if (daytonaV2(env)) {
-    const m = await getSandboxInfo(sandboxId, env);
-    if (parent && parent !== path && (await v2Execute(env, m, ['mkdir', '-p', '--', parent], 5000)).exitCode !== 0) {
-      throw new Error('Could not create upload directory');
-    }
-    await v2UploadFile(env, m, path, new Blob([body]));
-    return;
+  const m = await getSandboxInfo(sandboxId, env);
+  // One argv entry per path, so spaces or `$(…)` can never become extra arguments.
+  if (parent && parent !== path && (await v2Execute(env, m, ['mkdir', '-p', '--', parent], 5000)).exitCode !== 0) {
+    throw new Error('Could not create upload directory');
   }
-  if (parent && parent !== path) {
-    await fetch(toolboxUrl(env, sandboxId, '/process/execute'), {
-      method: 'POST',
-      headers: authHeaders(env),
-      body: JSON.stringify({
-        command: `mkdir -p -- '${parent}'`,
-        timeout: 5000,
-      }),
-    });
-  }
-
-  // Upload via multipart form
-  const blob = new Blob([body], { type: 'application/octet-stream' });
-  const form = new FormData();
-  form.append('file', blob, 'file');
-
-  const resp = await fetch(
-    `${toolboxUrl(env, sandboxId, '/files/upload')}?path=${encodeURIComponent(path)}`,
-    {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${env.DAYTONA_API_KEY}` },
-      body: form,
-    },
-  );
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`File upload failed: HTTP ${resp.status} — ${text.slice(0, 200)}`);
-  }
+  await v2UploadFile(env, m, path, new Blob([body]));
 }

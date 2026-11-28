@@ -8,7 +8,7 @@ import type { AppEnv } from '../types';
 import { resolveAuth } from '../utils/auth';
 import { GRANT_PREFIX } from '../grants';
 import { callerAuthority } from '../sandboxCredentials';
-import { daytonaV2, getV2Sandbox } from '../daytonaV2';
+import { getV2Sandbox } from '../daytonaV2';
 import { computerError, sessionEnded, desktopGeneration, computerToolbox, field,
   openComputerSession, verifyComputerSession, checkComputerFloor } from '../computerUse';
 import { ApiErrorSchema, ComputerSessionRequestSchema, ComputerSessionSchema, ComputerSessionResponseSchema,
@@ -31,21 +31,16 @@ computerRoutes.use('*', async (c, next) => {
     if (auth instanceof Response) return auth;
     if (auth.isCampusMode || !auth.userKeyRow) return computerError(403, 'owner_required', 'An ordinary personal key or sandbox credential is required, not Campus Pass.');
     const authority = callerAuthority(auth.userKeyRow);
-    // Cached identity only. No label discovery, ensureSandbox, control-plane
-    // readiness checks, or D1 cache repair on this path.
+    // Cached identity only. Verify it without discovery, wake, or cache repair.
     const cached = await c.env.DB.prepare(`SELECT daytona_sandbox_id FROM user_keys WHERE ${authority.sql}`)
       .bind(...authority.values).first<{ daytona_sandbox_id: string | null }>();
     if (!cached) return computerError(401, 'unauthorized', 'Owner authority has been revoked.');
     if (!cached.daytona_sandbox_id) return computerError(409, 'sandbox_not_running', 'No cached sandbox. Start the sandbox or Desktop deliberately before opening a session.');
-    let toolboxProxy = auth.userKeyRow.toolbox_proxy_url;
-    if (daytonaV2(c.env)) {
-      const m = await getV2Sandbox(cached.daytona_sandbox_id, c.env);
-      if (m?.state !== 'started' || m.labels?.[c.env.DAYTONA_DEPLOYMENT_LABEL] !== auth.userKeyRow.email) {
-        return computerError(409, 'sandbox_not_running', 'Start the sandbox or Desktop deliberately before opening a session.');
-      }
-      toolboxProxy = m.toolboxProxyUrl;
+    const m = await getV2Sandbox(cached.daytona_sandbox_id, c.env);
+    if (m?.state !== 'started' || m.labels?.[c.env.DAYTONA_DEPLOYMENT_LABEL] !== auth.userKeyRow.email) {
+      return computerError(409, 'sandbox_not_running', 'Start the sandbox or Desktop deliberately before opening a session.');
     }
-    c.set('computerCaller', { ...auth.userKeyRow, daytona_sandbox_id: cached.daytona_sandbox_id, toolbox_proxy_url: toolboxProxy });
+    c.set('computerCaller', { ...auth.userKeyRow, daytona_sandbox_id: cached.daytona_sandbox_id, toolbox_proxy_url: m.toolboxProxyUrl });
     await next();
   } catch { return computerError(502, 'computer_unavailable', 'Computer-use service unavailable. No input was retried.'); }
 });
@@ -59,7 +54,7 @@ computerRoutes.use('*', async (c, next) => {
 
 const description = 'Ordinary personal BayLeaf key or sandbox credential only; never Campus Pass, temporary inference tokens or cookies. ' +
   'No compute wake, creation, stack start or automatic retry. Toolbox reads refresh Daytona activity. ' +
-  'Handles expire after 24 hours and bind the owner, sandbox and the desktop process generation (Xvfb on Daytona v0, the active desktop session on v2). ' +
+  'Handles expire after 24 hours and bind the owner, sandbox and active desktop session generation. ' +
   'Generation is checked at session open and in parallel with every screenshot, not before each input. ' +
   'On any session_ended discard the handle and deliberately reopen; stateless handles cannot persist a failure tombstone. ' +
   'A concurrent restart between generation check and image capture remains possible. See /llms.txt#computer-use for workflow guidance.';

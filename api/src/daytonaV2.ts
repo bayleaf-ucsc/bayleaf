@@ -1,10 +1,9 @@
-/** Daytona v2 wire contract. The rollback-only v0 transport lives in daytona.ts. */
+/** Daytona v2 wire contract. Lifecycle orchestration lives in daytona.ts. */
 import type { Bindings } from './types';
 import type { SandboxInfo, ExecResult } from './daytona';
 
 const API = 'https://api.daytona.com';
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
-export const daytonaV2 = (env: Bindings) => env.DAYTONA_API_VERSION === '2';
 export const legacySandboxId = (id: string) => UUID.test(id);
 export const v2SandboxPath = (id: string) => `/sandboxes/${encodeURIComponent(id)}`;
 

@@ -87,7 +87,7 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
     PREVIEWS_INSTALLATION_KEY: installationKey,
     PREVIEWS_V2_UPSTREAM_SUFFIXES: '.ash-1.daytonaproxy03.net',
     OIDC_CLIENT_SECRET: oidc, ALLOWED_EMAIL_DOMAIN: 'example.test',
-    DAYTONA_API_VERSION: '2', DAYTONA_API_KEY: daytonaKey, DAYTONA_DEPLOYMENT_LABEL: label,
+    DAYTONA_API_KEY: daytonaKey, DAYTONA_DEPLOYMENT_LABEL: label,
     DAYTONA_V2_IMAGE: process.env.DAYTONA_V2_IMAGE, DAYTONA_V2_REGION: 'us-east-ash-1',
     DAYTONA_V2_CREATE_ENABLED: 'true' },
 }]}));

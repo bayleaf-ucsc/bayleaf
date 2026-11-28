@@ -25,7 +25,7 @@ const env = {
   PREVIEWS_SECRET: Buffer.alloc(32, 7).toString('base64'),
   PREVIEWS_INSTALLATION_KEY: 'synthetic-installation-secret',
   DAYTONA_API_KEY: 'synthetic-daytona-secret',
-  ALLOWED_EMAIL_DOMAIN: 'example.test', PREVIEWS_UPSTREAM_SUFFIXES: '.preview.example.test',
+  ALLOWED_EMAIL_DOMAIN: 'example.test', PREVIEWS_V2_UPSTREAM_SUFFIXES: '.preview.example.test',
 };
 const target = new URL('https://8765-synthetic-signed-credential.preview.example.test/');
 const incoming = 'https://owner-private-synthetic.previews.example.test/';

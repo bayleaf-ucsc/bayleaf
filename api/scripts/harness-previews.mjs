@@ -26,9 +26,9 @@ const REPLACED_ERROR = 'Preview application request failed. (The application\'s 
 const bindings = {
   PREVIEWS_ENABLED: 'true', PREVIEWS_API_ORIGIN: api,
   PREVIEWS_DOMAIN: 'previews.example.test', PREVIEWS_SECRET: Buffer.alloc(32, 7).toString('base64'),
-  PREVIEWS_INSTALLATION_KEY: key, PREVIEWS_UPSTREAM_SUFFIXES: '.preview.example.test',
+  PREVIEWS_INSTALLATION_KEY: key, PREVIEWS_V2_UPSTREAM_SUFFIXES: '.preview.example.test',
   ALLOWED_EMAIL_DOMAIN: 'example.test', OIDC_CLIENT_SECRET: oidcSecret,
-  DAYTONA_API_URL: 'https://daytona.example.test/api', DAYTONA_API_KEY: 'synthetic-daytona-key',
+  DAYTONA_API_KEY: 'synthetic-daytona-key',
   DAYTONA_DEPLOYMENT_LABEL: 'synthetic-chat', CAMPUS_IP_RANGES: '192.0.2.0/24',
   BROWSER_SANDBOX_ENABLED: 'true',
 };
@@ -85,7 +85,7 @@ const bundled = await build({ absWorkingDir: root, stdin: { resolveDir: root, co
   write: false, format: 'esm', platform: 'browser', target: 'es2022', external: ['cloudflare:workers'], loader: { '.py': 'text', '.md': 'text' } });
 let lastUpstream = null;
 let outboundCalls = 0;
-let sandboxState = 'started';
+let sandboxState = 'running';
 let handshakeRecheck = null;
 let rejectedUpstreamClose = null;
 const options = { workers: [{ name: 'preview-harness', modules: true, script: bundled.outputFiles[0].text,
@@ -95,13 +95,15 @@ const options = { workers: [{ name: 'preview-harness', modules: true, script: bu
   outboundService: async request => {
     outboundCalls++;
     const u = new URL(request.url);
-    if (u.hostname === 'daytona.example.test') {
+    if (u.hostname === 'api.daytona.com') {
       assert.equal(request.headers.get('Authorization'), 'Bearer synthetic-daytona-key');
-      if (u.pathname.endsWith('/signed-preview-url')) {
-        assert.equal(u.searchParams.get('expiresInSeconds'), '86400');
+      if (u.pathname.endsWith('/signed-preview-urls')) {
+        assert.equal(request.method, 'POST');
+        assert.equal((await request.json()).expires_in_seconds, 86400);
         return Response.json({ url: upstream + '/' });
       }
-      return Response.json({ id: 'owner-sandbox', state: sandboxState });
+      assert.equal(u.pathname, '/sandboxes/sbx_owner');
+      return Response.json({ id: 'sbx_owner', status: sandboxState, labels: { 'synthetic-chat': 'owner@example.test' } });
     }
     assert.equal(u.origin, upstream);
     lastUpstream = { url: u.href, method: request.method, headers: Object.fromEntries(request.headers), body: await request.text() };
@@ -303,8 +305,8 @@ try {
   assert.equal((await db.prepare('SELECT slug FROM preview_owners WHERE email=?')
     .bind('owner@example.test').first()).slug, 'owner');
   for (const [email, token, sandbox] of [
-    ['owner@example.test', 'sk-bayleaf-owner', 'owner-sandbox'],
-    ['other@example.test', 'sk-bayleaf-other', 'other-sandbox'],
+    ['owner@example.test', 'sk-bayleaf-owner', 'sbx_owner'],
+    ['other@example.test', 'sk-bayleaf-other', 'sbx_other'],
   ]) await db.prepare('INSERT INTO user_keys(email,bayleaf_token,daytona_sandbox_id) VALUES (?,?,?)').bind(email, token, sandbox).run();
 
   await check('unknown browser URLs recover without forwarding tenant details; machine reads remain 404', async () => {
@@ -879,7 +881,7 @@ try {
     const stopped = await dispatch(api + '/sandbox/expose', { method: 'POST', headers: {
       Authorization: 'Bearer sk-bayleaf-owner', 'Content-Type': 'application/json',
     }, body: '{"port":5000}' });
-    assert.equal(stopped.status, 409); sandboxState = 'started';
+    assert.equal(stopped.status, 409); sandboxState = 'running';
   });
   await check('keyed exposure supports explicit public access but reserves the browser port', async () => {
     const headers={Authorization:'Bearer sk-bayleaf-owner','Content-Type':'application/json'};
@@ -896,7 +898,7 @@ try {
     const { url: desktop } = await (await register()).json();
     const host = new URL(desktop).hostname;
     await db.prepare(`INSERT INTO sandbox_credentials(id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at)
-      VALUES ('desktop-credential','owner@example.test','owner-sandbox','desktop-hash','desktop-secret','active',0,0)`).run();
+      VALUES ('desktop-credential','owner@example.test','sbx_owner','desktop-hash','desktop-secret','active',0,0)`).run();
     await db.prepare(`UPDATE preview_registrations SET deployment='__browser', slot='__desktop', owner_key_hash='desktop-credential'
       WHERE hostname=?`).bind(host).run();
     const client = browser('owner@example.test');
@@ -911,7 +913,7 @@ try {
     const { url: desktop } = await (await register()).json();
     const host = new URL(desktop).hostname;
     await db.prepare(`INSERT INTO sandbox_credentials(id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at)
-      VALUES ('embed-credential','owner@example.test','owner-sandbox','embed-hash','embed-secret','active',0,0)`).run();
+      VALUES ('embed-credential','owner@example.test','sbx_owner','embed-hash','embed-secret','active',0,0)`).run();
     await db.prepare(`UPDATE preview_registrations SET deployment='__browser', slot='__desktop', owner_key_hash='embed-credential'
       WHERE hostname=?`).bind(host).run();
     const mint = async (email = 'owner@example.test') =>

@@ -7,24 +7,35 @@ const bundle = await build({ entryPoints: ['src/daytona.ts'], bundle: true,
 const { uploadFile, unsafeUploadPath } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 
-const env = { DAYTONA_API_URL: 'https://daytona.example.test/api', DAYTONA_API_KEY: 'synthetic' };
-const commands = [];
-globalThis.fetch = async (url, options) => {
-  if (new URL(url).pathname.endsWith('/process/execute')) commands.push(JSON.parse(options.body).command);
-  return new Response('{}', { status: 200 });
+const env = { DAYTONA_API_KEY: 'synthetic', DAYTONA_DEPLOYMENT_LABEL: 'synthetic' };
+const id = 'sbx_fixture';
+const sandbox = { id, status: 'running', toolbox_proxy_url: 'https://proxy.ash-1.us-east.daytona.app/toolbox' };
+const argvs = [], uploads = [];
+globalThis.fetch = async (input, options) => {
+  const request = new Request(input, options);
+  const url = new URL(request.url);
+  if (url.pathname === `/sandboxes/${id}`) return Response.json(sandbox);
+  if (url.pathname === `/toolbox/${id}/processes`) {
+    argvs.push((await request.json()).argv);
+    return Response.json({ id: 'process', exitCode: 0, logs: { frames: [], eof: true } });
+  }
+  assert.equal(url.pathname, `/toolbox/${id}/files/upload`);
+  uploads.push(url.searchParams.get('path'));
+  return new Response(null, { status: 200 });
 };
 
-// Toolbox splits argv but runs no shell: spaces must stay inside one quoted argument,
+// Toolbox takes argv without a shell: spaces stay inside one argument,
 // and `$(…)` is literal text, not a substitution.
-await uploadFile('sbx', '/home/daytona/my docs/$(id)/a.txt', new ArrayBuffer(1), env);
-assert.deepEqual(commands, ["mkdir -p -- '/home/daytona/my docs/$(id)'"]);
+await uploadFile(id, '/home/daytona/my docs/$(id)/a.txt', new ArrayBuffer(1), env);
+assert.deepEqual(argvs, [['mkdir', '-p', '--', '/home/daytona/my docs/$(id)']]);
+assert.deepEqual(uploads, ['/home/daytona/my docs/$(id)/a.txt']);
 
 for (const path of ["/home/daytona/it's/a.txt", '/home/daytona/a\nb.txt', '/home/daytona/a\x00.txt'])
   assert.equal(unsafeUploadPath(path), true, JSON.stringify(path));
 assert.equal(unsafeUploadPath('/home/daytona/my docs/a.txt'), false);
 
-commands.length = 0;
-await assert.rejects(uploadFile('sbx', "/home/daytona/x' /etc/y/a.txt", new ArrayBuffer(1), env));
-assert.deepEqual(commands, [], 'an unsafe path never reaches Toolbox');
+argvs.length = 0; uploads.length = 0;
+await assert.rejects(uploadFile(id, "/home/daytona/x' /etc/y/a.txt", new ArrayBuffer(1), env));
+assert.deepEqual([argvs, uploads], [[], []], 'an unsafe path never reaches Toolbox');
 
-console.log('PASS: uploadFile quotes mkdir as one argument and refuses quote-breaking paths');
+console.log('PASS: uploadFile passes mkdir as one argv entry and refuses quote-breaking paths');

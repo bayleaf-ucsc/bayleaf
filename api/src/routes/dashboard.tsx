@@ -9,8 +9,7 @@ import { getSession } from '../utils/session';
 import { getAuthIP, isCampusPassEligible } from '../utils/ip';
 import { inspectCounter, parseLimit } from '../utils/campusRpd';
 import { getActiveRow, resolveOrKeyInfo } from '../provision';
-import { findSandboxByLabel, getSandboxInfo, lookupOwnedV2Sandbox, type SandboxInfo } from '../daytona';
-import { daytonaV2 } from '../daytonaV2';
+import { lookupOwnedV2Sandbox, type SandboxInfo } from '../daytona';
 import { LandingPage, type CampusUsage } from '../templates/landing';
 import { DashboardPage, type AltBackendUsage } from '../templates/dashboard';
 import { renderPage } from '../templates/layout';
@@ -95,25 +94,7 @@ dashboardRoutes.get('/dashboard', async (c) => {
   let sandboxInfo: SandboxInfo | null = null;
   if (row && c.env.DAYTONA_API_KEY && c.env.SANDBOX_MIGRATION_READONLY !== 'true') {
     try {
-      if (daytonaV2(c.env)) {
-        sandboxInfo = await lookupOwnedV2Sandbox(session.email, c.env, row.daytona_sandbox_id);
-      } else if (row.daytona_sandbox_id) {
-        try {
-          sandboxInfo = await getSandboxInfo(row.daytona_sandbox_id, c.env);
-        } catch {
-          sandboxInfo = await findSandboxByLabel(session.email, c.env);
-          await c.env.DB.prepare(
-            'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ? AND revoked = 0',
-          ).bind(sandboxInfo?.id ?? null, session.email).run();
-        }
-      } else {
-        sandboxInfo = await findSandboxByLabel(session.email, c.env);
-        if (sandboxInfo) {
-          await c.env.DB.prepare(
-            'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ? AND revoked = 0',
-          ).bind(sandboxInfo.id, session.email).run();
-        }
-      }
+      sandboxInfo = await lookupOwnedV2Sandbox(session.email, c.env, row.daytona_sandbox_id);
     } catch (e) {
       console.error('Failed to fetch sandbox status:', e);
     }

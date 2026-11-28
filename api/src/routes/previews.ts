@@ -344,9 +344,7 @@ async function registerPreview(env: Bindings, policy: Deployment, input: Preview
 
 function apiPolicy(env: Bindings): Deployment {
   return { id: '__api', email_domain: env.ALLOWED_EMAIL_DOMAIN,
-    upstream_suffixes: (env.DAYTONA_API_VERSION === '2'
-      ? env.PREVIEWS_V2_UPSTREAM_SUFFIXES ?? ''
-      : env.PREVIEWS_UPSTREAM_SUFFIXES ?? '').split(',').map(s => s.trim()),
+    upstream_suffixes: (env.PREVIEWS_V2_UPSTREAM_SUFFIXES ?? '').split(',').map(s => s.trim()),
     // Daytona's default CORS layer echoes any Origin with credentials and answers
     // preflights itself; disabling it leaves cross-origin policy to the app.
     upstream_headers: { 'X-Daytona-Skip-Preview-Warning': 'true', 'X-Daytona-Disable-CORS': 'true' } };

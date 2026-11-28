@@ -33,6 +33,7 @@ console.log(`PASS insideSandboxDirs: ${table.length} lexical cases (prefix slash
 
 // Full app with synthetic Daytona control plane and Toolbox.
 const SECRET = 'synthetic-grant-sandbox-secret', API = 'https://api.example.test', EMAIL = 'owner@example.test', KEY = 'sk-bayleaf-owner';
+const SBX = 'sbx_1', TOOLBOX = 'https://proxy.synthetic-1.example.daytona.app';  // v2 ID and regional Toolbox origin
 const bundle = (await build({ absWorkingDir: root, stdin: { resolveDir: root, contents: `
   import app from './src/index.ts';
   export { PreviewConnections } from './src/index.ts';
@@ -44,31 +45,30 @@ const bundle = (await build({ absWorkingDir: root, stdin: { resolveDir: root, co
   external: ['cloudflare:workers', 'node:*'], loader: { '.py': 'text', '.md': 'text' } })).outputFiles[0].text;
 
 const daytona = [];   // every control-plane or Toolbox request, as "METHOD host/path?query"
-const commands = [];  // Toolbox /process/execute commands
+const commands = [];  // Toolbox /processes argv arrays
 const uploads = [];   // Toolbox upload target paths
 const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{ name: 'api', modules: true, script: bundle,
   compatibilityDate: '2026-08-01', compatibilityFlags: ['nodejs_compat'], d1Databases: ['DB'],
   kvNamespaces: ['MODEL_STATUS', 'CAMPUS_RPD'], durableObjects: { PREVIEW_CONNECTIONS: { className: 'PreviewConnections', useSQLite: true } },
   bindings: { GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '3600', OIDC_CLIENT_SECRET: SECRET, ALLOWED_EMAIL_DOMAIN: 'example.test',
     CAMPUS_IP_RANGES: '192.0.2.0/24', PREVIEWS_ENABLED: 'false', INBOXES_ENABLED: 'false',
-    DAYTONA_API_URL: 'https://daytona.example.test/api', DAYTONA_PROXY_URL: 'https://toolbox.example.test/toolbox',
     DAYTONA_API_KEY: 'synthetic-daytona', DAYTONA_DEPLOYMENT_LABEL: 'synthetic',
     OPENROUTER_PROVISIONING_KEY: 'synthetic', TINFOIL_ADMIN_KEY: 'synthetic' },
   outboundService: async req => {
     const u = new URL(req.url);
     daytona.push(`${req.method} ${u.hostname}${u.pathname}${u.search}`);
-    if (u.hostname === 'daytona.example.test') {
-      assert.equal(u.pathname, '/api/sandbox/sbx1', 'only the cached machine is looked up');
-      return Response.json({ id: 'sbx1', state: 'started', labels: { synthetic: EMAIL } });
+    if (u.hostname === 'api.daytona.com') {
+      assert.equal(`${req.method} ${u.pathname}`, `GET /sandboxes/${SBX}`, 'only the cached machine is looked up');
+      return Response.json({ id: SBX, status: 'running', labels: { synthetic: EMAIL }, toolbox_proxy_url: TOOLBOX + '/toolbox' });
     }
-    if (u.hostname === 'toolbox.example.test') {
-      if (u.pathname === '/toolbox/sbx1/process/execute') {
-        const { command } = await req.json(); commands.push(command);
-        return Response.json({ exitCode: 0, result: command === 'echo ready' ? 'ready' : '' });
+    if (u.origin === TOOLBOX) {
+      if (u.pathname === `/toolbox/${SBX}/processes`) {
+        const { argv } = await req.json(); commands.push(argv);
+        return Response.json({ id: 'process', exitCode: 0, logs: { frames: [], eof: true } });
       }
-      if (u.pathname === '/toolbox/sbx1/files/download')
+      if (u.pathname === `/toolbox/${SBX}/files/download`)
         return new Response('bytes of ' + u.searchParams.get('path'), { headers: { 'Content-Type': 'application/octet-stream' } });
-      if (u.pathname === '/toolbox/sbx1/files/upload') { uploads.push(u.searchParams.get('path')); return Response.json({}); }
+      if (u.pathname === `/toolbox/${SBX}/files/upload`) { uploads.push(u.searchParams.get('path')); return Response.json({}); }
     }
     throw new Error('Unexpected synthetic upstream ' + u.hostname + u.pathname);
   } }] }));
@@ -108,7 +108,7 @@ try {
     for (const s of parts.map(x => x.trim()).filter(Boolean)) await db.prepare(s).run();
   }
   await db.prepare('INSERT INTO user_keys(email,bayleaf_token,daytona_sandbox_id,account_generation) VALUES(?,?,?,?)')
-    .bind(EMAIL, KEY, 'sbx1', 'gen-owner').run();
+    .bind(EMAIL, KEY, SBX, 'gen-owner').run();
   worker = await mf.getWorker('api');
 
   // 2. Issuance: scope and binding come together; names follow the slug grammar.
@@ -136,7 +136,7 @@ try {
   const t = reader.access_token;
   const got = await expect(await call(t, 'GET', F + 'journal/2026/a.txt'), 200, null, 'bound read');
   assert.equal(got, `bytes of ${R}journal/2026/a.txt`);
-  assert.ok(daytona.includes(`GET toolbox.example.test/toolbox/sbx1/files/download?path=${encodeURIComponent(R + 'journal/2026/a.txt')}`));
+  assert.ok(daytona.includes(`GET ${new URL(TOOLBOX).hostname}/toolbox/${SBX}/files/download?path=${encodeURIComponent(R + 'journal/2026/a.txt')}`));
   for (const [path, what] of [[F + 'journal-old/a.txt', 'sibling folder'], [F + 'notes/a.txt', 'unbound folder'], [F + 'journal/', 'folder itself'],
     [F + 'journal', 'folder without slash'], ['/sandbox/files/home/daytona/workspace/a.txt', '~/workspace'], ['/sandbox/files/etc/passwd', '/etc'],
     [F + 'journal/%2E%2E/secret', 'encoded traversal'], [F + 'journal/a/%2e%2e/%2e%2e/x', 'encoded double traversal'],
@@ -148,13 +148,13 @@ try {
   assert.equal(new URL(API + F + 'journal/%2E%2E/secret').pathname, F + 'secret');
   await denied(t, 'PUT', F + 'journal/a.txt', 'read token PUT', { raw: 'x' });
 
-  // Write token: PUT inside only, mkdir gets the single quoted parent, no GET.
+  // Write token: PUT inside only, mkdir gets the parent as a single argv entry, no GET.
   const writer = (await expect(await issue({ scopes: WRITE, sandbox_dirs: ['journal'] }), 200)).access_token;
   commands.length = 0; uploads.length = 0;
   const put = await expect(await call(writer, 'PUT', F + 'journal/2026/11/e.md', { raw: 'hello' }), 200, null, 'bound write');
   assert.deepEqual([put.path, put.bytes], [R + 'journal/2026/11/e.md', 5]);
   assert.deepEqual(uploads, [R + 'journal/2026/11/e.md']);
-  assert.deepEqual(commands.filter(c => c.startsWith('mkdir -p --')), [`mkdir -p -- '${R}journal/2026/11'`]);
+  assert.deepEqual(commands.filter(c => c.slice(0, 3).join(' ') === 'mkdir -p --'), [['mkdir', '-p', '--', `${R}journal/2026/11`]]);
   await denied(writer, 'PUT', F + 'journal-old/e.md', 'write sibling', { raw: 'x' });
   await denied(writer, 'PUT', F + 'journal/%2E%2E/e.md', 'write traversal', { raw: 'x' });
   await denied(writer, 'PUT', '/sandbox/files/home/daytona/workspace/e.md', 'write ~/workspace', { raw: 'x' });

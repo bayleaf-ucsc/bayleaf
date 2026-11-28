@@ -123,8 +123,8 @@ Then configure `OIDC_ISSUER` and related vars in `wrangler.jsonc`, and set `OIDC
 | `OIDC_REQUIRED_IDP` | Optional: userinfo `idp` claim must equal this (CILogon) | `urn:mace:incommon:ucsc.edu` |
 | `OIDC_LOGIN_BUTTON_TEXT` | Login button label | `Sign in with UCSC` |
 | `CAMPUS_IP_RANGES` | CIDR ranges for Campus Pass (comma-separated, empty = disabled) | `128.114.0.0/16,169.233.0.0/16` |
-| `DAYTONA_API_URL` | Sandbox provider control plane URL | `https://app.daytona.io/api` |
-| `DAYTONA_PROXY_URL` | Sandbox provider toolbox proxy URL | `https://proxy.app.daytona.io/toolbox` |
+| `DAYTONA_V2_REGION` | Region for new sandboxes | `us-east-ash-1` |
+| `DAYTONA_V2_IMAGE` | Verified Daytona image for new sandboxes | See `wrangler.jsonc` |
 | `DAYTONA_DEPLOYMENT_LABEL` | Label prefix for sandbox tagging. Shared with chat.bayleaf.dev's Lathe so a user has one sandbox across both services (issue #14). | `chat.bayleaf.dev` |
 | `SEALED_ENABLED` | Master kill-switch for the Sealed lane. Must be exactly `"true"`; anything else 503s all of `/sealed/*`. | `true` |
 | `SEALED_RPD_LIMIT` | Per-user daily request guardrail for keyed Sealed traffic | `500` |

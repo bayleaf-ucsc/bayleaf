@@ -37,9 +37,8 @@ Updated files:
   machine ID. No Campus Pass, temporary inference tokens or browser-cookie fallback.
 - No create/start/wake, `resolveSandboxId`, `ensureSandbox`, label discovery,
   readiness echo, D1 cache repair or action retry. A missing cached ID returns
-  409 `sandbox_not_running`; missing Toolbox at session open returns 410
-  `sandbox_not_running`, other unavailable Toolbox responses return 409.
-  Missing, ambiguous or malformed Xvfb generation returns 409
+  409 `sandbox_not_running`; an unavailable Toolbox at session open or a
+  missing, ambiguous or malformed Xfce session generation returns 409
   `desktop_not_running`. Messages ask the client to start the sandbox or Desktop
   deliberately. No separate Desktop start route: managed Desktop owns activation.
 - All 16 methods use POST with JSON. This keeps signed observation handles out of
@@ -47,12 +46,12 @@ Updated files:
   `{}`; subsequent methods take a handle plus their single-operation fields.
 - GUI transport is Daytona Toolbox `/computeruse/*`, including for agents inside
   the sandbox. The only exception is the approved, constant read-only generation
-  probe using `/process/execute`: Python reads `/proc/sys/kernel/random/boot_id`,
-  exact `Xvfb` comm plus display argument `:0`, and field 22 after the last `)` of
+  probe using `/processes` with an argument vector: Python reads
+  `/proc/sys/kernel/random/boot_id`, finds the exact `xfce4-session` process,
+  and reads field 22 after the last `)` of
   `/proc/<pid>/stat`. Exactly one triple is required; no caller-controlled code,
   paths or arguments enter the command. A 3-second Python alarm independently
-  bounds the probe (the low-level execution request also carries `timeout: 5000`,
-  following the existing helper convention). Outbound fetches have an 8-second
+  bounds the probe. Outbound fetches have an 8-second
   timeout and reject redirects.
 - Handles contain the SHA-256 hash of that triple, a random nonce, owner hash,
   cached sandbox ID, purpose and 24-hour expiry. HS256 uses purpose-separated

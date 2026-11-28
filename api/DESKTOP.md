@@ -10,9 +10,9 @@ computer-use API is documented in [`COMPUTER-USE.md`](COMPUTER-USE.md).
 - `SERVICE_DEFS.desktop`: port 6080, slot `__desktop`, always private,
   `credential: false`, 1 GiB memory floor (the stack idles near 450 MB RSS),
   `driver: 'computeruse'`. Port 6080 is reserved from `/sandbox/expose`.
-- The stack (Xvfb `:0` at 1024x768, xfce4, x11vnc, noVNC/websockify, pulseaudio,
-  at-spi) is Daytona's, supervised by its computer-use plugin. BayLeaf installs
-  nothing for it and never creates a sandbox for it: an absent machine fails
+- Daytona v2 supervises the Xfce desktop. BayLeaf starts the noVNC bridge
+  with existing guest tools when needed, and never creates a sandbox for Desktop:
+  an absent machine fails
   with `sandbox_missing`. Start may wake an existing machine, like other apps.
 - Start: discover, credentials, wake, then Toolbox `POST /computeruse/start`
   and `GET /computeruse/status`. `active` proceeds to registration; otherwise
@@ -22,11 +22,10 @@ computer-use API is documented in [`COMPUTER-USE.md`](COMPUTER-USE.md).
 - Registration is the ordinary managed signed-preview path. No upstream header
   is injected.
 - Status GET stays passive: no Toolbox, wake or activity refresh.
-- Stop: revoke access first, then, only if the machine is `started`, Toolbox
-  `POST /computeruse/stop` and the uploaded `scripts/desktop-cleanup.py`. A
-  sleeping machine is never woken; sleep already ended the stack. The stop
-  response adds `processes_reaped` (a count, no identifiers).
-- Restart is a clean session: stop plus reap, then start, on a fresh origin.
+- Stop revokes access first, then uses Daytona's `/computeruse/stop` if
+  the machine is running. Stop never wakes a paused machine. A later explicit
+  launch may resume it to finish deferred cleanup.
+- Restart stops the prior session and starts a fresh one on a new origin.
   Windows open on the desktop close.
 
 ## Landing path
@@ -109,17 +108,6 @@ Threat model and limits:
 - Fetch Metadata is required for frame navigation and ordinary subresources.
   WebSocket handshakes may omit `Sec-Fetch-Dest`: an exact preview-origin
   `Origin` is still required, as are the valid session and current registration.
-
-## Orphan cleanup
-
-`/computeruse/stop` leaves session daemons reparented to pid 1. The script
-reaps a process only if its argv[0] basename is in a fixed allowlist (xfconfd,
-ssh-agent, gpg-agent, dconf-service, gvfsd*, gvfs-*-volume-monitor), it has
-the script's uid, its environ contains exactly `DISPLAY=:0`, and it is not pid 1,
-a Daytona binary, the script or one of its ancestors. SIGTERM, a 2-second wait,
-then SIGKILL only after re-checking identity. Requiring the allowlist keeps an
-owner who exports `DISPLAY=:0` in a shell profile from losing their agents.
-`scripts/test-desktop-cleanup.py` covers selection synthetically.
 
 ## Security limits
 

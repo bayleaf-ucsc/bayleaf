@@ -62,11 +62,11 @@ const provider = new Map();
 let holdRelease, acquireGate;
 const hold = new Promise(resolve => { holdRelease = resolve; });
 const noNet = async req => {
-  const u = new URL(req.url), row = provider.get(u.pathname.slice('/sandbox/'.length));
-  if (u.hostname !== 'daytona.invalid' || !u.pathname.startsWith('/sandbox/') || req.method !== 'GET')
+  const u = new URL(req.url), row = provider.get(decodeURIComponent(u.pathname.slice('/sandboxes/'.length)));
+  if (u.hostname !== 'api.daytona.com' || !u.pathname.startsWith('/sandboxes/') || req.method !== 'GET')
     throw new Error('Unexpected outbound access in stream test');
   if (row?.gate) await row.gate;
-  return row ? Response.json({ id: row.id, state: 'started', labels: { synthetic: row.email } }) : new Response(null, { status: 404 });
+  return row ? Response.json({ id: row.id, status: 'running', labels: { synthetic: row.email } }) : new Response(null, { status: 404 });
 };
 let mf, db, inboxDb, base;
 before(async () => {
@@ -76,7 +76,7 @@ before(async () => {
     serviceBindings: { INBOXES: { name: 'inbox', entrypoint: 'InboxManagement' }, HOLD: () => hold.then(() => new Response('ok')),
       ACQUIRE_GATE: async () => { acquireGate.started(); await acquireGate.wait; return new Response('ok'); } },
     bindings: { INBOXES_ENABLED: 'true', INBOX_STREAM_SECONDS: String(seconds), INBOX_STREAM_POLL_MS: '50', INBOX_STREAM_WRITE_MS: '250',
-      OIDC_CLIENT_SECRET: 'synthetic', DAYTONA_API_URL: 'https://daytona.invalid', DAYTONA_API_KEY: 'synthetic',
+      OIDC_CLIENT_SECRET: 'synthetic', DAYTONA_API_KEY: 'synthetic',
       DAYTONA_DEPLOYMENT_LABEL: 'synthetic', CAMPUS_IP_RANGES: '192.0.2.0/24', GRANTS_ENABLED: 'true', GRANTS_MAX_SECONDS: '600',
       PREVIEWS_ENABLED: 'false' } });
   mf = new Miniflare(convertV4MiniflareOptions({ workers: [apiWorker('api', 'api.example.test', 30),
@@ -104,9 +104,10 @@ after(async () => { holdRelease(); await mf?.dispose(); });
 const call = (u, path, init = {}) => mf.dispatchFetch('https://api.example.test' + path,
   { ...init, headers: { Authorization: `Bearer ${u.key}`, 'Content-Type': 'application/json', ...init.headers } });
 async function setup() {
-  const id = randomUUID(), u = { key: 'sk-bayleaf-' + id, generation: id, email: id + '@example.test', id };
+  const id = randomUUID(), u = { key: 'sk-bayleaf-' + id, generation: id, email: id + '@example.test', id,
+    sandbox: 'sbx_' + id, secret: 'BAYLEAF_SANDBOX_' + id.replaceAll('-', '').toUpperCase() };
   await db.prepare('INSERT INTO user_keys(email, bayleaf_token, account_generation, daytona_sandbox_id) VALUES (?,?,?,?)')
-    .bind(u.email, u.key, u.generation, id).run();
+    .bind(u.email, u.key, u.generation, u.sandbox).run();
   const r = await call(u, '/inboxes', { method: 'POST', body: '{"type":"http","access":"open"}' });
   assert.equal(r.status, 201, await r.clone().text());
   u.inbox = await r.json();
@@ -256,8 +257,8 @@ for (const mode of ['destroy', 'ttl', 'ordinary revoke', 'ordinary rotate', 'gen
     if (mode.startsWith('sandbox')) {
       bearer = 'sk-bayleaf-sandbox-' + randomBytes(32).toString('hex');
       await db.prepare(`INSERT INTO sandbox_credentials(id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at)
-        VALUES(?,?,?,?,?,'active',0,0)`).bind(u.id, u.email, u.id, createHash('sha256').update(bearer).digest('hex'), 'stream-' + u.id).run();
-      provider.set(u.id, { id: u.id, email: u.email }); u.key = bearer;
+        VALUES(?,?,?,?,?,'active',0,0)`).bind(u.id, u.email, u.sandbox, createHash('sha256').update(bearer).digest('hex'), u.secret).run();
+      provider.set(u.sandbox, { id: u.sandbox, email: u.email }); u.key = bearer;
     }
     const s = await ready(u);
     try {
@@ -406,8 +407,8 @@ test('epoch changes while connected end explicitly with cursor_expired', { timeo
 test('stalled sandbox reauthentication fails closed under the five-second watchdog', { timeout: 12000 }, async () => {
   const u = await setup(), bearer = 'sk-bayleaf-sandbox-' + randomBytes(32).toString('hex');
   await db.prepare(`INSERT INTO sandbox_credentials(id,email,sandbox_id,token_hash,secret_name,state,created_at,updated_at)
-    VALUES(?,?,?,?,?,'active',0,0)`).bind(u.id, u.email, u.id, createHash('sha256').update(bearer).digest('hex'), 'stream-' + u.id).run();
-  const row = { id: u.id, email: u.email }; provider.set(u.id, row); u.key = bearer;
+    VALUES(?,?,?,?,?,'active',0,0)`).bind(u.id, u.email, u.sandbox, createHash('sha256').update(bearer).digest('hex'), u.secret).run();
+  const row = { id: u.sandbox, email: u.email }; provider.set(u.sandbox, row); u.key = bearer;
   const s = await ready(u);
   let unblock;
   try {

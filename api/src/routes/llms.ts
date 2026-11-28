@@ -1245,11 +1245,12 @@ Browser access (when enabled; ordinary personal keys only):
 Poll status during setup, then open the returned private URL through the owner's
 browser login. Private browser links last up to 24 hours; expiry revokes link
 access without stopping applications. If the sandbox sleeps or the link expires,
-return to https://sandbox.bayleaf.dev to resume. New sandboxes use daytona-medium,
-stop after 1 hour idle, and archive after 24 hours stopped. A 503 may
+return to https://sandbox.bayleaf.dev to resume. New sandboxes reserve 1 vCPU
+(burst to 2), have 2 GiB RAM and a 10 GiB disk cap, and pause after one idle
+hour. Pausing preserves running processes. A 503 may
 mean the browser feature is disabled. Browser setup delegates a dedicated sandbox
 credential into the sandbox and persists agent histories there; inference still uses
-BayLeaf's approved ZDR provider path. Stopping/archiving loses running processes.
+BayLeaf's approved ZDR provider path.
 
 ### Computer use
 
@@ -1270,7 +1271,7 @@ base64 JSON; accept lowercase or PascalCase image fields. Divide screenshot
 coordinates by scale, then add any region origin, before acting in native display
 pixels. Windows geometry/IDs may not be useful.
 
-Each screenshot checks the Xvfb generation in parallel (boot ID, PID and process
+Each screenshot checks the Xfce session generation in parallel (boot ID, PID and process
 starttime). HTTP 410 ${bt}session_ended${bt} means discard the handle, stop the
 action loop and open a fresh session deliberately. Do not retry ambiguous input:
 it may already have applied. HTTP 409 means the cached sandbox or Desktop is not

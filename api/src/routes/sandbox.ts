@@ -33,14 +33,11 @@ import {
   downloadFile,
   uploadFile,
   unsafeUploadPath,
-  findSandboxByLabel,
-  getSandboxInfo,
   refreshActivity,
   deleteSandbox,
   createSignedPreview,
   lookupOwnedV2Sandbox,
 } from '../daytona';
-import { daytonaV2 } from '../daytonaV2';
 import { previewsEnabled, registerUserPreview, revokeUserPreview } from './previews';
 import { grantError, insideSandboxDirs, requireScope, storedGrantSandboxDirs, type GrantScope } from '../grants';
 import {
@@ -172,15 +169,13 @@ async function clearCachedSandboxId(
   const clear = env.DB.prepare(
     'UPDATE user_keys SET daytona_sandbox_id = NULL WHERE email = ? AND daytona_sandbox_id = ?',
   ).bind(email, id);
-  if (daytonaV2(env)) {
-    await env.DB.batch([clear, env.DB.prepare('DELETE FROM sandbox_import_activity WHERE sandbox_id=?').bind(id)]);
-  } else await clear.run();
+  await env.DB.batch([clear, env.DB.prepare('DELETE FROM sandbox_import_activity WHERE sandbox_id=?').bind(id)]);
 }
 
 /**
  * Look up the user's sandbox WITHOUT side effects (no create, no start).
- * Mirrors the dashboard's status lookup: try the cached ID, fall back to a
- * label lookup, and self-heal the D1 cache when the two disagree. Returns
+ * Mirrors the dashboard's passive lookup: verify the cached ID and fall back
+ * to exact owner-label discovery. Returns
  * null when the user has no sandbox at all. Use this for read-only status;
  * use resolveSandboxId() when the sandbox must actually be running.
  */
@@ -194,26 +189,7 @@ async function lookupSandboxInfo(
 
   const cachedId = row?.daytona_sandbox_id ?? null;
 
-  if (daytonaV2(env)) return lookupOwnedV2Sandbox(email, env, cachedId);
-
-  if (cachedId) {
-    try {
-      return await getSandboxInfo(cachedId, env);
-    } catch {
-      // Stale cached ID (deleted externally, 404, etc.) — fall through.
-    }
-  }
-
-  const sandbox = await findSandboxByLabel(email, env);
-
-  // Self-heal the cache when the label lookup found a different (or first) ID.
-  if (sandbox && sandbox.id !== cachedId) {
-    await env.DB.prepare(
-      'UPDATE user_keys SET daytona_sandbox_id = ? WHERE email = ?',
-    ).bind(sandbox.id, email).run();
-  }
-
-  return sandbox;
+  return lookupOwnedV2Sandbox(email, env, cachedId);
 }
 
 // ── POST /exec ─────────────────────────────────────────────────────
@@ -691,14 +667,7 @@ sandboxRoutes.openapi(deleteSandboxRoute, async (c) => {
       'SELECT daytona_sandbox_id FROM user_keys WHERE email = ?',
     ).bind(email).first<Pick<UserKeyRow, 'daytona_sandbox_id'>>();
 
-    let sandboxId = row?.daytona_sandbox_id ?? null;
-
-    if (daytonaV2(c.env)) {
-      sandboxId = (await lookupOwnedV2Sandbox(email, c.env, sandboxId))?.id ?? null;
-    } else if (!sandboxId) {
-      const sandbox = await findSandboxByLabel(email, c.env);
-      sandboxId = sandbox?.id ?? null;
-    }
+    const sandboxId = (await lookupOwnedV2Sandbox(email, c.env, row?.daytona_sandbox_id))?.id;
 
     if (!sandboxId) {
       return c.json({ success: true as const, message: 'No sandbox found.' }, 200);

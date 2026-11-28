@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-01-31",
   "compatibility_flags": ["nodejs_compat"],
-  "rules": [{ "type": "Text", "globs": ["**/browser-setup.py", "**/jupyter-adapter.py", "**/desktop-cleanup.py", "**/app-auth-relay.py"], "fallthrough": true }],
+  "rules": [{ "type": "Text", "globs": ["**/browser-setup.py", "**/jupyter-adapter.py", "**/app-auth-relay.py"], "fallthrough": true }],
   "build": { "command": "npm run build:sandbox-cli && python3 scripts/build-sandbox-plugin.py" },
   
   // Observability - disabled to avoid unnecessary data accumulation.
@@ -93,7 +93,6 @@
     "PREVIEWS_ENABLED": "true",
     "PREVIEWS_API_ORIGIN": "https://api.bayleaf.dev",
     "PREVIEWS_DOMAIN": "bayleaf-proxies.dev",
-    "PREVIEWS_UPSTREAM_SUFFIXES": ".proxy.daytona.work,.daytonaproxy01.net",
     "PREVIEWS_V2_UPSTREAM_SUFFIXES": ".ash-1.daytonaproxy03.net",
     // BayLeaf Inboxes facade, issue #97. Community access enabled 2026-10-21.
     // /inboxes is 404 unless exactly "true". Evidence: inbox/QUALIFICATION.md.
@@ -284,22 +283,16 @@
     "DIRECTORY_RPD_LIMIT": "200",
 
     // Sandbox: sandboxed code execution via Daytona
-    "DAYTONA_API_URL": "https://app.daytona.io/api",
-    // Staging override: set version to 2 and supply a verified named image.
-    "DAYTONA_API_VERSION": "2",
     "SANDBOX_MIGRATION_READONLY": "false",
     "DAYTONA_V2_REGION": "us-east-ash-1",
     "DAYTONA_V2_IMAGE": "lathe-us-east-ash-1-20261127-5d26f651",
     "DAYTONA_V2_CREATE_ENABLED": "true",
     "DAYTONA_V2_REAPER_DELETE": "false",
-    "DAYTONA_V2_RETIRE_V0_CREDENTIALS": "false",
-    "DAYTONA_PROXY_URL": "https://proxy.app.daytona.io/toolbox",
     // Unified with chat.bayleaf.dev (Lathe) so a user has one sandbox across
     // both services. See issue #14. The API never reads/writes the volume
     // mount Lathe may attach at /home/daytona/volume; only /home/daytona/workspace
     // is the shared filesystem surface.
     "DAYTONA_DEPLOYMENT_LABEL": "chat.bayleaf.dev",
-    "DAYTONA_AUTO_DELETE_MINUTES": "-1",
     "SANDBOX_REAPER_MODE": "delete",
     "USER_RETENTION_MODE": "delete"
   }

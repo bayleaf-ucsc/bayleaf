@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 
 const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
   export { default } from './src/index';
-  export { COMPUTER_GENERATION_COMMAND } from './src/computerUse';
+  export { COMPUTER_GENERATION_CODE } from './src/computerUse';
   export { seal, hash } from './src/grants';
   export { sign } from 'hono/jwt';
 ` }, bundle: true, write: false, format: 'esm', platform: 'browser',
@@ -20,27 +20,26 @@ const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
     }));
   } }],
 });
-const { default: worker, COMPUTER_GENERATION_COMMAND, seal, hash, sign } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
-let id = 'synthetic-machine', generation = ['11111111-2222-3333-4444-555555555555', '293', '121700320'];
+const { default: worker, COMPUTER_GENERATION_CODE, seal, hash, sign } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+let id = 'sbx_synthetic-machine', generation = ['11111111-2222-3333-4444-555555555555', '293', '121700320'];
 let row = { email: 'owner@example.test', account_generation: 'synthetic-account',
   bayleaf_token: 'sk-bayleaf-synthetic', revoked: 0, user_last_active_at: Math.floor(Date.now() / 1000) };
 let activeCredential = true, revoked = false, pascal = false, probeOutput, probeExit = 0;
 let grant;
-let toolboxStatus = 200, throwToolbox = false, imageStatus = 200, imageType = 'image/png';
+let toolboxStatus = 200, desktopStatus = 'active', throwToolbox = false, imageStatus = 200, imageType = 'image/png';
 let calls = [], queries = [], requests = [], screenshotSeen = false, probeSeen = false, parallelProbe = false;
 let requireParallel = false, logs = [];
 const realFetch = globalThis.fetch, realError = console.error;
 const sandboxToken = 'sk-bayleaf-sandbox-' + 'a'.repeat(64);
 const env = {
   OIDC_CLIENT_SECRET: 'synthetic-session-secret', DAYTONA_API_KEY: 'synthetic-provider-secret',
-  DAYTONA_API_URL: 'https://control.example.test', DAYTONA_PROXY_URL: 'https://proxy.example.test/toolbox',
   DAYTONA_DEPLOYMENT_LABEL: 'test-label', CAMPUS_IP_RANGES: '192.0.2.0/24', CAMPUS_POOL_KEY: 'synthetic-campus', GRANTS_ENABLED: 'true',
   DB: { prepare(sql) { return { bind(...values) { return {
     async first() {
       queries.push({ sql, values });
       if (sql.includes('FROM inference_grants')) return grant;
       if (sql.includes('FROM sandbox_credentials WHERE token_hash')) return activeCredential
-        ? { id: 'credential', email: row.email, sandbox_id: id } : null;
+        ? { id: 'credential', email: row.email, sandbox_id: id, secret_name: 'BAYLEAF_SANDBOX_' + 'A'.repeat(32) } : null;
       if (sql.startsWith('SELECT daytona_sandbox_id')) {
         assert.ok(sql.includes('revoked=0') || sql.includes("sc.state='active'"));
         return revoked ? null : { daytona_sandbox_id: id };
@@ -53,20 +52,21 @@ const env = {
   }; } }; } },
 };
 console.error = (...args) => logs.push(args.join(' '));
+const toolboxCalls = () => calls.filter(({ url }) => url.startsWith('https://proxy.')).length;
 globalThis.fetch = async (url, init) => {
   url = String(url); calls.push({ url, init });
   assert.equal(init.redirect, 'manual'); assert.ok(init.signal);
-  assert.equal(init.headers.Authorization, 'Bearer synthetic-provider-secret');
-  if (url === `https://control.example.test/sandbox/${id}`) {
-    assert.equal(init.method, 'GET');
-    return Response.json({ id, state: 'started', labels: { 'test-label': row.email }, toolboxProxyUrl: 'https://regional.example.test/toolbox' });
+  assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer synthetic-provider-secret');
+  if (url === `https://api.daytona.com/sandboxes/${id}`) {
+    assert.equal(init.method ?? 'GET', 'GET');
+    return Response.json({ id, status: 'running', labels: { 'test-label': row.email },
+      toolbox_proxy_url: 'https://proxy.region.daytona.app/toolbox' });
   }
-  assert.match(url, /^https:\/\/(proxy|regional)\.example\.test\/toolbox\/synthetic-machine\//);
-  assert.equal(init.cache, 'no-store');
+  assert.match(url, /^https:\/\/proxy\.region\.daytona\.app\/toolbox\/sbx_synthetic-machine\//);
   if (throwToolbox) throw new Error('Do not log typed content or synthetic-provider-secret');
-  if (url.endsWith('/process/execute')) {
+  if (new URL(url).pathname.endsWith('/processes')) {
     assert.equal(init.method, 'POST');
-    assert.deepEqual(JSON.parse(init.body), { command: COMPUTER_GENERATION_COMMAND, timeout: 5000 });
+    assert.deepEqual(JSON.parse(init.body), { argv: ['python3', '-c', COMPUTER_GENERATION_CODE], timeoutMs: 5000 });
     probeSeen = true;
     if (requireParallel) {
       // fetch screenshot starts first; its response must not need to finish
@@ -75,9 +75,14 @@ globalThis.fetch = async (url, init) => {
     }
     if (toolboxStatus !== 200) return Response.json({ message: 'Do not relay provider details' }, { status: toolboxStatus });
     const value = probeOutput ?? JSON.stringify([generation]);
-    return Response.json(pascal ? { Result: value, ExitCode: probeExit } : { result: value, exitCode: probeExit });
+    return Response.json({ id: 'process', exitCode: probeExit, logs: { frames: [{ data: value }], eof: true } });
   }
+  assert.equal(init.cache, 'no-store');
   assert.ok(url.includes('/computeruse/'), 'Only the constant read-only probe may use another Toolbox path');
+  if (url.endsWith('/computeruse/status')) {
+    if (toolboxStatus !== 200) return Response.json({}, { status: toolboxStatus });
+    return Response.json(pascal ? { Status: desktopStatus } : { status: desktopStatus });
+  }
   if (url.includes('/screenshot')) {
     screenshotSeen = true;
     await Promise.resolve();
@@ -133,13 +138,16 @@ try {
     await expectCode(path, {}, 403, 'insufficient_scope', grantToken);
   }
   assert.equal(calls.length, 0, 'Every computer method rejects non-owner auth before Toolbox');
-  id = null; await expectCode('session', {}, 409, 'sandbox_not_running'); assert.equal(calls.length, 0); id = 'synthetic-machine';
+  id = null; await expectCode('session', {}, 409, 'sandbox_not_running'); assert.equal(calls.length, 0); id = 'sbx_synthetic-machine';
   revoked = true; await expectCode('session', {}, 401); revoked = false;
   for (const status of [409, 503, 404, 410, 302]) {
-    toolboxStatus = status;
-    await expectCode('session', {}, status === 404 || status === 410 ? 410 : 409, 'sandbox_not_running');
+    toolboxStatus = status; await expectCode('session', {}, 409, 'desktop_not_running');
   }
   toolboxStatus = 200;
+  for (const status of ['inactive', 'partial']) {
+    desktopStatus = status; await expectCode('session', {}, 409, 'desktop_not_running');
+  }
+  desktopStatus = 'active';
   for (const output of ['[]', '[[]]', JSON.stringify([generation, generation]), 'not json', JSON.stringify([['bad-boot', '293', '12']]),
     JSON.stringify([[generation[0], 293, '12']]), JSON.stringify([[generation[0], '293', '0']]), 'x'.repeat(513)]) {
     probeOutput = output; await expectCode('session', {}, 409, 'desktop_not_running');
@@ -157,9 +165,9 @@ try {
     await expectCode('display/info', { session: altered }, 410, 'session_ended');
   }
   const tokenParts = handle.split('.'); tokenParts[1] = Buffer.from(JSON.stringify({ exp: 9999999999 })).toString('base64url');
-  const beforeTamper = calls.length;
+  const beforeTamper = toolboxCalls();
   await expectCode('keyboard/type', { session: tokenParts.join('.'), text: 'secret' }, 410, 'session_ended');
-  assert.equal(calls.length, beforeTamper, 'Tampered handle must not reach Toolbox');
+  assert.equal(toolboxCalls(), beforeTamper, 'Tampered handle must not reach Toolbox');
   const originalGeneration = [...generation];
   for (const change of [[generation[0], '294', generation[2]], [generation[0], generation[1], '121700321'],
     ['aaaaaaaa-2222-3333-4444-555555555555', generation[1], generation[2]]]) {
@@ -177,14 +185,14 @@ try {
     'keyboard/type': { text: 'Hello\n世界' }, 'keyboard/press': { key: 'enter' },
     'keyboard/hotkey': { keys: 'ctrl+u' }, 'keyboard/down': { key: 'shift' }, 'keyboard/up': { key: 'shift' },
   })) {
-    const before = calls.length;
+    const before = toolboxCalls();
     const r = await call(path, { session: handle, ...action }); assert.equal(r.status, 200); assert.deepEqual(await r.json(), { success: true });
-    assert.equal(calls.length, before + 1, 'No readiness ritual per action');
+    assert.equal(toolboxCalls(), before + 1, 'No readiness ritual per action');
     assert.ok(requests.at(-1).path.endsWith(path === 'keyboard/press' ? '/keyboard/key' : '/' + path));
   }
   for (const [path, body] of [['mouse/down', { x: 3 }], ['mouse/move', { x: -1, y: 0 }], ['keyboard/type', { text: '\t' }],
     ['screenshot/compressed', { scale: 2 }], ['keyboard/type', { text: 'a', actions: [] }]]) {
-    const before = calls.length; await expectCode(path, { session: handle, ...body }, 400, 'invalid_request'); assert.equal(calls.length, before);
+    const before = toolboxCalls(); await expectCode(path, { session: handle, ...body }, 400, 'invalid_request'); assert.equal(toolboxCalls(), before);
   }
   await expectCode('keyboard/type', '{bad secret input', 400, 'invalid_request');
   await expectCode('keyboard/type', 'x'.repeat(32769), 400, 'invalid_request');
@@ -203,7 +211,7 @@ try {
     assert.equal(await r.text(), 'synthetic-image-not-real-content');
     assert.equal(r.headers.get('Set-Cookie'), null); assert.equal(r.headers.get('X-Provider-Secret'), null);
     assert.equal(r.headers.get('Access-Control-Allow-Origin'), '*');
-    assert.ok(parallelProbe); assert.ok(calls.slice(-2).some(c => c.url.includes(expected)));
+    assert.ok(parallelProbe); assert.ok(calls.slice(-3).some(c => c.url.includes(expected)));
     requireParallel = false;
   }
   imageType = 'application/json';
@@ -214,7 +222,7 @@ try {
   throwToolbox = true; await expectCode('screenshot', { session: handle }, 410, 'session_ended'); throwToolbox = false;
   imageType = 'text/html'; await expectCode('screenshot', { session: handle }, 410, 'session_ended'); imageType = 'image/png';
   const sandboxHandle = await open(sandboxToken);
-  assert.ok(calls.at(-1).url.startsWith('https://regional.example.test/'), 'Reuse toolboxProxyUrl already obtained by sandbox-credential auth');
+  assert.ok(calls.at(-1).url.startsWith('https://proxy.region.daytona.app/'), 'Use the regional toolbox_proxy_url from verified v2 metadata');
   assert.equal((await call('mouse/move', { session: sandboxHandle, x: 1, y: 1 }, sandboxToken)).status, 200);
   activeCredential = false; await expectCode('session', {}, 401, undefined, sandboxToken); activeCredential = true;
   assert.equal(logs.length, 0, 'No content-bearing exception reaches the generic logger');
@@ -222,7 +230,7 @@ try {
 
   // Run the exact Python probe against virtual /proc fixtures, not the host's
   // processes. Field 22 must survive spaces and multiple ')' inside stat comm.
-  const code = COMPUTER_GENERATION_COMMAND.slice("python3 -c '".length, -1);
+  const code = COMPUTER_GENERATION_CODE;
   for (const [count, expectedCount] of [[0, 0], [1, 1], [2, 2]]) {
     const fixture = `import sys,types,json
 class Path:
@@ -233,10 +241,9 @@ class Path:
     def iterdir(self): return [Path("/proc/"+str(n)) for n in range(100,100+${count})]+[Path("/proc/not-a-pid"),Path("/proc/999")]
     def read_text(self):
         if self.p.endswith("boot_id"): return "11111111-2222-3333-4444-555555555555\\n"
-        if self.p.endswith("comm"): return "Other" if "/999/" in self.p else "Xvfb\\n"
-        if self.p.endswith("stat"): return "100 (Xvfb (name) strange)) S " + "0 "*18 + "12345 99"
+        if self.p.endswith("comm"): return "Other" if "/999/" in self.p else "xfce4-session\\n"
+        if self.p.endswith("stat"): return "100 (xfce4 (name) strange)) S " + "0 "*18 + "12345 99"
         raise AssertionError(self.p)
-    def read_bytes(self): return b"/usr/bin/Xvfb\\0:0\\0-screen\\00\\0"
 sys.modules["pathlib"]=types.SimpleNamespace(Path=Path)
 exec(${JSON.stringify(code)})`;
     const child = spawnSync('python3', ['-c', fixture], { encoding: 'utf8', timeout: 5000 });

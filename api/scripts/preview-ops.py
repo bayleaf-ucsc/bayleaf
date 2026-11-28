@@ -153,17 +153,21 @@ def expose():
 
 
 def signed_destination():
-    entries = dict(item.split("=", 1) for item in shlex.split((Path.home() / ".tokens/owui/chat-bayleaf-dev").read_text(), comments=True) if "=" in item)
-    result = subprocess.run(["uvx", "owui-cli", "--json", "tools", "valves", "lathe"],
-        env={**os.environ, **entries}, capture_output=True, text=True)
-    if result.returncode:
-        raise SystemExit("Could not read Lathe valves through owui-cli")
-    valves = json.loads(result.stdout)
-    key = valves["daytona_api_key"]
-    sandbox = api("/sandbox")
-    request = urllib.request.Request(f'https://app.daytona.io/api/sandbox/{sandbox["id"]}/ports/8787/signed-preview-url?expiresInSeconds=3600',
-        headers={"Authorization": "Bearer " + key, "User-Agent": "BayLeaf-Preview-Qualification/1.0"})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    key = (Path.home() / ".tokens/bayleaf-api-sandbox-v2").read_text().strip()
+    sandbox_id = api("/sandbox").get("id", "")
+    if not re.fullmatch(r"sbx_[A-Za-z0-9_-]+", sandbox_id):
+        raise SystemExit("Expected the operator's Daytona v2 sandbox")
+    request = urllib.request.Request(
+        f"https://api.daytona.com/sandboxes/{sandbox_id}/ports/8787/signed-preview-urls",
+        method="POST", data=json.dumps({"expires_in_seconds": 3600}).encode(),
+        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json",
+                 "User-Agent": "BayLeaf-Preview-Qualification/1.0"})
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    with urllib.request.build_opener(NoRedirect()).open(request, timeout=30) as response:
         result = json.load(response)
     return result["url"]
 

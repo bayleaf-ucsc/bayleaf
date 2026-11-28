@@ -8,7 +8,6 @@ import { build } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions, WebSocketPair, Response as WorkerResponse } from 'miniflare';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const v2 = process.argv.includes('--daytona-v2');
 const api = 'https://api.example.test';
 const email = 'owner@example.test';
 const secret = 'synthetic-oidc-secret';
@@ -25,7 +24,7 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
   let rejectCreateTransport=false;
   const nativeFetch=globalThis.fetch;
   globalThis.fetch=(input,init)=>{
-    if(rejectCreateTransport && typeof input==='string' && input==='https://daytona.example.test/api/sandbox' && init?.method==='POST') {
+    if(rejectCreateTransport && typeof input==='string' && String(input)==='https://api.daytona.com/sandboxes' && init?.method==='POST') {
       rejectCreateTransport=false;return Promise.reject(new Error('synthetic connection lost'));
     }
     return nativeFetch(input,init);
@@ -83,18 +82,73 @@ const bundle = await build({ absWorkingDir: root, stdin: { resolveDir: root, con
   }};
 ` }, bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022', external: ['cloudflare:workers'], loader: { '.py': 'text', '.md': 'text' } });
 
-let state = 'archived', lookupFails = false, exists = true, interrupted = false, memory = 4, isPublic = false;
-let creates = 0, wakes = 0, executions = 0, launches = 0, previewCalls = 0;
-let incomingOperation, lastForwarded, lastForwardedUrl, toolboxFailures = 0, machineId = 'synthetic-sandbox', wrongService = false;
-const credentialsUploaded=[];
+// Harness state uses BayLeaf's normalized names; the mock speaks v2 wire status.
+let state = 'stopped', lookupFails = false, exists = true, interrupted = false, memory = 4;
+let creates = 0, wakes = 0, executions = 0, bootReads = 0, launches = 0, previewCalls = 0;
+let incomingOperation, lastForwarded, lastForwardedUrl, toolboxFailures = 0, machineId = 'sbx_synthetic-sandbox', wrongService = false;
+const credentialUploads = [];
 const vault = new Map();
-let failCreate=false, creationRequests=0, rejectCreate=0;
-let computerUse=[], desktopUp=false, desktopCasing='pascal', desktopStartFails=false, registeredAtDesktopStop;
-let jupyterAuth, ttydAuth, opencodeAuth, wrongOpencodeOrigin=false, stopFails=false, stops=0;
-const machine = () => ({ id: machineId, state, memory, public: isPublic, labels: { 'synthetic-chat': email } });
+let failCreate = false, creationRequests = 0, createKeys = [];
+let computerUse = [], desktopUp = false, desktopStartFails = false, registeredAtDesktopStop;
+let jupyterAuth, ttydAuth, opencodeAuth, wrongOpencodeOrigin = false, stopFails = false, stops = 0;
 let bootId = '11111111-2222-4333-8444-555555555555';
 let mountedSecrets = [];
-const v2Uploads = new Map(), signedPorts = [];
+const uploads = new Map(), signedPorts = [];
+const wire = () => ({ started: 'running', starting: 'booting' })[state] ?? state;
+const sandbox = () => ({ id: machineId, status: wire(), labels: { 'synthetic-chat': email }, persistent: true,
+  memory_max_mib: memory * 1024, toolbox_proxy_url: 'https://proxy.region.daytona.app/toolbox' });
+const processResult = (output, exitCode = 0) => Response.json({ id: 'process', exitCode, logs: { frames: [{ data: output }], eof: true } });
+async function guestCommand(command) {
+  executions++;
+  assert(!command.includes('sk-bayleaf-'), 'credential in command');
+  for (const secret of [jupyterAuth, ttydAuth, opencodeAuth]) if (secret) assert(!command.includes(secret), 'app secret in command');
+  if (command === 'cat /proc/sys/kernel/random/boot_id') { bootReads++; return processResult(`${bootId}\n`); }
+  if (command.includes('subprocess.Popen') && command.includes('setup.py')) launches++;
+  if (command.includes('/stop.py --service ')) {
+    stops++;
+    const operation = command.match(/--operation ([a-f0-9-]+)/)[1];
+    return processResult(JSON.stringify({ stopped: !stopFails, operation }), stopFails ? 1 : 0);
+  }
+  if (command.endsWith('setup.py inspect')) return processResult(JSON.stringify({
+    schema: 1, operation: interrupted ? 'stale' : incomingOperation.operation,
+    updated_at: Math.floor(Date.now() / 1000), phase: 'ready', ready: true, port: 3100,
+    timeline: [{ step: 'loading_tools', at: Math.floor(Date.now() / 1000) },
+      { step: 'credential-leak', at: Math.floor(Date.now() / 1000), error: 'secret' },
+      { step: 'connecting_bayleaf', at: 9999999999999 }],
+  }));
+  const appService = ['code-server', 'dufs', 'jupyter', 'ttyd', 'opencode-web'].find(id => command.endsWith('--service ' + id + ' inspect'));
+  if (appService) return processResult(JSON.stringify({
+    schema: 1, service: wrongService ? 'openchamber' : appService, operation: incomingOperation.operation,
+    updated_at: Math.floor(Date.now() / 1000), phase: 'ready', ready: true,
+    ...(appService === 'opencode-web' ? {
+      preview_origin: wrongOpencodeOrigin ? 'https://stale.example.test' : incomingOperation.preview_origin,
+    } : {}),
+    port: { dufs: 8790, jupyter: 8793, ttyd: 8794, 'opencode-web': 8795 }[appService] ?? 8791,
+    timeline: [{ step: appService === 'dufs' ? 'installing_dufs' : 'installing_code_server', at: Math.floor(Date.now() / 1000) }],
+  }));
+  return processResult('');
+}
+async function guestUpload(target, text) {
+  uploads.set(target, text);
+  if (target.endsWith('request.next.json')) {
+    incomingOperation = JSON.parse(text);
+    assert(incomingOperation.deadline <= Math.floor(Date.now() / 1000) + 20 * 60);
+    if (target.includes('/opencode-web/')) {
+      const preview = await db.prepare("SELECT hostname FROM preview_registrations WHERE slot='__opencode-web'").first();
+      assert(preview, 'private origin must be registered before launching OpenCode');
+      assert.equal(incomingOperation.preview_origin, `https://${preview.hostname}`);
+    } else assert.equal(incomingOperation.preview_origin, undefined);
+  }
+  // v2 apps read their key from a mounted secret, never from an uploaded file.
+  if (target.includes('/credentials/') && !target.endsWith('credentials/app-secret')) credentialUploads.push(target);
+  if (target.endsWith('credentials/app-secret')) {
+    assert.match(text, /^[a-f0-9]{64}$/);
+    if (target.includes('/ttyd/')) ttydAuth = text;
+    else if (target.includes('/jupyter/')) jupyterAuth = text;
+    else if (target.includes('/opencode-web/')) opencodeAuth = text;
+    else assert.fail('unexpected app-secret upload');
+  }
+}
 const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
   name: 'browser-harness', modules: true, script: bundle.outputFiles[0].text,
   compatibilityDate: '2025-01-31', compatibilityFlags: ['nodejs_compat'], d1Databases: ['DB'],
@@ -105,30 +159,55 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
   bindings: {
     BROWSER_SANDBOX_ENABLED: 'true', PREVIEWS_ENABLED: 'true', PREVIEWS_API_ORIGIN: api,
     PREVIEWS_DOMAIN: 'previews.example.test', PREVIEWS_SECRET: previewSecret,
-    PREVIEWS_UPSTREAM_SUFFIXES: '.preview.example.test', ALLOWED_EMAIL_DOMAIN: 'example.test',
-    OIDC_CLIENT_SECRET: secret, DAYTONA_API_URL: 'https://daytona.example.test/api',
+    ALLOWED_EMAIL_DOMAIN: 'example.test',
+    OIDC_CLIENT_SECRET: secret,
     SEALED_ENABLED:'true',SEALED_RPD_LIMIT:'500',
     RECOMMENDED_MODEL:'synthetic/model',OPENCODE_CURATED_MODELS:'synthetic/model',
-    DAYTONA_PROXY_URL: 'https://toolbox.example.test', DAYTONA_API_KEY: 'synthetic-daytona-key',
-    DAYTONA_DEPLOYMENT_LABEL: 'synthetic-chat', DAYTONA_AUTO_DELETE_MINUTES: '-1',
-    ...(v2 ? { DAYTONA_API_VERSION: '2', PREVIEWS_V2_UPSTREAM_SUFFIXES: '.preview.example.test' } : {}),
+    DAYTONA_API_KEY: 'synthetic-daytona-key', DAYTONA_DEPLOYMENT_LABEL: 'synthetic-chat',
+    PREVIEWS_V2_UPSTREAM_SUFFIXES: '.preview.example.test',
+    DAYTONA_V2_CREATE_ENABLED: 'true', DAYTONA_V2_IMAGE: 'synthetic-image', DAYTONA_V2_REGION: 'synthetic-region',
   },
   outboundService: async req => {
     const u = new URL(req.url);
     if (u.hostname==='openrouter.ai') return Response.json({data:u.pathname.endsWith('/models')?
       [{id:'synthetic/model',name:'Synthetic model',pricing:{prompt:'0.000001',completion:'0.000002'}}]:
       {limit:5,limit_remaining:3.75,limit_reset:'daily',usage:30,usage_daily:1.25}});
-    if (v2 && u.hostname === 'api.daytona.com') {
+    if (u.hostname === 'api.daytona.com') {
       assert.equal(req.headers.get('Authorization'), 'Bearer synthetic-daytona-key');
+      if (lookupFails && req.method === 'GET') return new Response('outage', { status: 503 });
+      if (u.pathname === '/sandboxes/search') {
+        const owner = JSON.parse(u.searchParams.get('labels'))['synthetic-chat'];
+        return Response.json({ sandboxes: exists && owner === email ? [sandbox()] : [], next_cursor: null });
+      }
+      if (u.pathname === '/sandboxes' && req.method === 'POST') {
+        creationRequests++;
+        const body = await req.json();
+        createKeys.push(body.idempotency_key);
+        assert.deepEqual(body.labels, { 'synthetic-chat': email }); assert.equal(body.persistent, true);
+        assert.equal(body.lifecycle_policy.on_idle_timeout, 'pause');
+        if (failCreate) return new Response('ambiguous provider failure', { status: 503 });
+        creates++; exists = true; state = 'started';
+        return Response.json(sandbox(), { status: 201 });
+      }
+      if (u.pathname.startsWith('/secrets/') && req.method === 'PUT') {
+        const name = u.pathname.split('/').at(-1), body = await req.json();
+        assert.deepEqual(body.allowed_domains, ['api.bayleaf.dev']);
+        assert.match(body.value, /^sk-bayleaf-sandbox-[a-f0-9]{64}$/);
+        vault.set(name, true);
+        return Response.json({ name, allowed_domains: body.allowed_domains }, { status: 201 });
+      }
       const path = `/sandboxes/${machineId}`;
-      if (u.pathname === path) return Response.json({
-        id: machineId, status: state, labels: machine().labels, persistent: true, memory_max_mib: 4096,
-        toolbox_proxy_url: 'https://proxy.region.daytona.app/toolbox',
-      });
+      if (!exists || !u.pathname.startsWith(path)) return new Response('', { status: 404 });
+      if (u.pathname === path) return Response.json(sandbox());
       if (u.pathname === `${path}/resume` && req.method === 'POST') {
-        assert.equal(state, 'paused'); wakes++; state = 'running';
+        assert.equal(state, 'paused'); wakes++; state = 'started';
         return new Response(null, { status: 202 });
       }
+      if (u.pathname === `${path}/start` && req.method === 'POST') {
+        assert.equal(state, 'stopped'); wakes++; state = 'started';
+        return new Response(null, { status: 202 });
+      }
+      if (u.pathname === `${path}/reset-idle-timer` && req.method === 'POST') return new Response(null, { status: 204 });
       if (u.pathname === `${path}/secrets` && req.method === 'GET') {
         return Response.json({ secrets: mountedSecrets, status: 'applied' }, { headers: { ETag: '"1"' } });
       }
@@ -138,150 +217,35 @@ const mf = new Miniflare(convertV4MiniflareOptions({ workers: [{
         assert(mountedSecrets.every(name => vault.has(name)));
         return new Response(null, { status: 202 });
       }
-      if (u.pathname.startsWith('/secrets/') && req.method === 'PUT') {
-        const name = u.pathname.split('/').at(-1), body = await req.json();
-        assert.deepEqual(body.allowed_domains, ['api.bayleaf.dev']);
-        vault.set(name, true);
-        return Response.json({ name, allowed_domains: body.allowed_domains }, { status: 201 });
-      }
       const signed = u.pathname.match(new RegExp(`^${path}/ports/(\\d+)/signed-preview-urls$`));
       if (signed && req.method === 'POST') {
+        assert((await req.json()).expires_in_seconds <= 86400);
         previewCalls++; signedPorts.push(Number(signed[1]));
         return Response.json({ url: `https://${signed[1]}-synthetic.preview.example.test/` });
       }
     }
-    if (v2 && u.hostname === 'proxy.region.daytona.app') {
-      assert.equal(state, 'running', 'Toolbox must never run on paused compute');
+    if (u.hostname === 'proxy.region.daytona.app') {
+      assert.equal(state, 'started', 'Toolbox must never run on paused or stopped compute');
+      if (toolboxFailures > 0) { toolboxFailures--; return new Response('not ready', { status: 503 }); }
       const path = `/toolbox/${machineId}`;
       if (u.pathname === `${path}/processes`) {
         const { argv } = await req.json();
-        let output = '';
-        if (ttydAuth) assert(!argv[2].includes(ttydAuth), 'ttyd secret in command');
-        if (argv[2] === 'cat /proc/sys/kernel/random/boot_id') output = `${bootId}\n`;
-        else if (argv[2].endsWith('--service ttyd inspect')) output = JSON.stringify({ schema: 1, service: 'ttyd',
-          operation: incomingOperation.operation, updated_at: Math.floor(Date.now() / 1000), phase: 'ready', ready: true, port: 8794 });
-        else if (!/subprocess\.Popen|mkdir -p|mv /.test(argv[2])) assert.match(argv[2], /websockify/);
-        executions++;
-        return Response.json({ id: 'process', exitCode: 0, logs: { frames: [{ data: output }], eof: true } });
+        return guestCommand(argv[0] === 'bash' && argv[1] === '-c' ? argv[2] : argv.join(' '));
       }
       if (u.pathname === `${path}/files/upload`) {
-        const target = u.searchParams.get('path'), text = await (await req.formData()).get('file').text();
-        v2Uploads.set(target, text);
-        if (target.endsWith('request.next.json')) incomingOperation = JSON.parse(text);
-        if (target.endsWith('/ttyd/credentials/app-secret')) ttydAuth = text;
+        await guestUpload(u.searchParams.get('path'), await (await req.formData()).get('file').text());
         return Response.json({});
       }
       if (u.pathname.startsWith(`${path}/computeruse/`)) {
         const action = u.pathname.split('/').at(-1);
         computerUse.push(`${req.method} ${action}`);
-        if (action === 'start') desktopUp = true;
+        if (action === 'start') desktopUp = !desktopStartFails;
         if (action === 'stop') {
           registeredAtDesktopStop = (await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__desktop'").first()).n;
           desktopUp = false;
         }
         return Response.json({ status: desktopUp ? 'active' : 'inactive' });
       }
-    }
-    if (u.hostname === 'daytona.example.test') {
-      if (u.pathname === '/api/secret' && req.method === 'POST') {
-        const body = await req.json();
-        assert.deepEqual(body.hosts, ['api.bayleaf.dev']);
-        assert.match(body.value, /^sk-bayleaf-sandbox-[a-f0-9]{64}$/);
-        const entry = {id:body.name,name:body.name,placeholder:'dtn_secret_'+body.name,hosts:body.hosts};
-        vault.set(entry.id, entry); return Response.json(entry, {status:201});
-      }
-      if (u.pathname.endsWith('/secrets') && req.method === 'PUT') {
-        const body = await req.json(); assert.equal(body.secrets.length,1);
-        assert(vault.has(body.secrets[0].BAYLEAF_API_KEY)); return Response.json(machine());
-      }
-      if (u.pathname.endsWith('/stop')) { state = 'stopped'; return Response.json({}); }
-      if (machineId !== 'synthetic-sandbox' && u.pathname === '/api/sandbox/synthetic-sandbox') return new Response('',{status:404});
-      if (u.pathname === '/api/sandbox' && req.method === 'GET') {
-        if (lookupFails) return new Response('outage', { status: 503 });
-        return Response.json({ items: exists ? [machine()] : [] });
-      }
-      if (u.pathname === '/api/sandbox' && req.method === 'POST') {
-        creationRequests++;
-        if(rejectCreate)return new Response('rejected',{status:rejectCreate});
-        if(failCreate)return new Response('ambiguous provider failure',{status:503});
-        const body = await req.json();
-        assert.equal(body.snapshot, 'daytona-medium');assert.equal(body.public, false);
-        assert.equal(body.autoStopInterval,60);assert.equal(body.autoArchiveInterval,1440);
-        assert.equal(body.autoDeleteInterval,-1);
-        creates++; exists = true; state = 'started'; return Response.json(machine());
-      }
-      if (u.pathname.endsWith('/start')) { wakes++; state = 'started'; return Response.json({}); }
-      if (u.pathname.endsWith('/signed-preview-url')) {
-        assert(Number(u.searchParams.get('expiresInSeconds')) <= 86400);
-        previewCalls++; return Response.json({ url: 'https://3100-synthetic.preview.example.test/' });
-      }
-      return exists ? Response.json(machine()) : new Response('', { status: 404 });
-    }
-    if (u.hostname === 'toolbox.example.test') {
-      if (toolboxFailures > 0) { toolboxFailures--; return new Response('not ready', {status:503}); }
-      const cu=u.pathname.match(/\/computeruse\/(start|stop|status)$/);
-      if (cu) {
-        computerUse.push(req.method+' '+cu[1]);
-        if (cu[1]==='status') return Response.json({status:desktopUp?'active':'partial'});
-        if (cu[1]==='stop') registeredAtDesktopStop=(await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__desktop'").first()).n;
-        desktopUp=cu[1]==='start'&&!desktopStartFails;
-        const record=running=>desktopCasing==='pascal'?{Running:running,Pid:running?42:null,AutoRestart:true,Priority:100}:{running,pid:null};
-        return Response.json({message:'synthetic',status:Object.fromEntries(['atspi','novnc','pulseaudio','x11vnc','xfce4','xvfb'].map(n=>[n,record(desktopUp)]))});
-      }
-      if (u.pathname.endsWith('/files/upload')) {
-        const form = await req.formData(); const text = await form.get('file').text();
-        if (u.searchParams.get('path').endsWith('request.next.json')) {
-          incomingOperation = JSON.parse(text);
-          assert(incomingOperation.deadline<=Math.floor(Date.now()/1000)+20*60);
-          if (u.searchParams.get('path').includes('/opencode-web/')) {
-            const preview = await db.prepare("SELECT hostname FROM preview_registrations WHERE slot='__opencode-web'").first();
-            assert(preview, 'private origin must be registered before launching OpenCode');
-            assert.equal(incomingOperation.preview_origin, `https://${preview.hostname}`);
-          } else assert.equal(incomingOperation.preview_origin, undefined);
-        }
-        if (u.searchParams.get('path').endsWith('credentials/incoming')) {
-          assert(text.startsWith('dtn_secret_')); credentialsUploaded.push(u.searchParams.get('path'));
-        }
-        if (u.searchParams.get('path').endsWith('credentials/app-secret')) {
-          assert.match(text,/^[a-f0-9]{64}$/);
-          if(u.searchParams.get('path').includes('/ttyd/'))ttydAuth=text;
-           else if(u.searchParams.get('path').includes('/jupyter/'))jupyterAuth=text;
-           else if(u.searchParams.get('path').includes('/opencode-web/'))opencodeAuth=text;
-          else assert.fail('unexpected app-secret upload');
-        }
-        return Response.json({});
-      }
-      executions++;
-      const { command } = await req.json();
-      assert(!command.includes('sk-bayleaf-'), 'credential in command');
-      if(jupyterAuth)assert(!command.includes(jupyterAuth),'Jupyter secret in command');
-       if(ttydAuth)assert(!command.includes(ttydAuth),'ttyd secret in command');
-       if(opencodeAuth)assert(!command.includes(opencodeAuth),'OpenCode Web secret in command');
-      if (command.includes('subprocess.Popen')) launches++;
-      if (command.includes('/stop.py --service ')) {
-        stops++;
-        const operation=command.match(/--operation ([a-f0-9-]+)/)[1];
-        return Response.json({exitCode:stopFails?1:0,result:JSON.stringify({stopped:!stopFails,operation})});
-      }
-      if (command.endsWith('/desktop/desktop-cleanup.py')) return Response.json({exitCode:0,result:JSON.stringify({stopped:true,reaped:3})});
-      if (command.endsWith('setup.py inspect')) return Response.json({ exitCode: 0, result: JSON.stringify({
-        schema: 1, operation: interrupted ? 'stale' : incomingOperation.operation,
-        updated_at: Math.floor(Date.now()/1000), phase: 'ready', ready: true, port: 3100,
-        timeline:[{step:'loading_tools',at:Math.floor(Date.now()/1000)},
-          {step:'credential-leak',at:Math.floor(Date.now()/1000),error:'secret'},
-          {step:'connecting_bayleaf',at:9999999999999}],
-      }) });
-       const appService = ['code-server','dufs','jupyter','ttyd','opencode-web'].find(id=>command.endsWith('--service '+id+' inspect'));
-      if (appService) return Response.json({exitCode:0,result:JSON.stringify({
-        schema:1,service:wrongService?'openchamber':appService,operation:incomingOperation.operation,
-        updated_at:Math.floor(Date.now()/1000),phase:'ready',ready:true,
-        ...(appService === 'opencode-web' ? {
-          preview_origin:wrongOpencodeOrigin?'https://stale.example.test':incomingOperation.preview_origin,
-        } : {}),
-         port:appService==='dufs'?8790:appService==='jupyter'?8793:appService==='ttyd'?8794:appService==='opencode-web'?8795:8791,
-        timeline:[{step:appService==='dufs'?'installing_dufs':'installing_code_server',at:Math.floor(Date.now()/1000)}],
-      })});
-      return Response.json({ exitCode: 0, result: '' });
     }
     if (u.hostname.endsWith('.preview.example.test')) {
       lastForwarded = Object.fromEntries(req.headers); lastForwardedUrl = req.url;
@@ -333,108 +297,6 @@ try {
   for(const [owner,token] of [[email,'sk-bayleaf-owner'],['other@example.test','sk-bayleaf-other']])
     await db.prepare('INSERT INTO user_keys(email,bayleaf_token) VALUES (?,?)').bind(owner,token).run();
 
-  if (v2) {
-    machineId = 'sbx_browser-fixture'; state = 'running';
-    await db.prepare('UPDATE user_keys SET daytona_sandbox_id=? WHERE email=?').bind(machineId, email).run();
-    const desktop = (name, method = 'GET') => req(`/__test/${name}?service=desktop`, { method });
-    const complete = async () => {
-      for (let i = 0; i < 12; i++) {
-        await desktop('__tick');
-        const status = await (await desktop('status')).json();
-        if (status.phase !== 'opening') {
-          assert.equal(status.phase, 'ready', JSON.stringify(status));
-          return status;
-        }
-      }
-      assert.fail('Desktop lifecycle did not complete');
-    };
-    let ready;
-    await check('v2 Start verifies boot generation, keeping the lease after pause', async () => {
-      assert.equal((await desktop('start', 'POST')).status, 202);
-      ready = await complete();
-      state = 'paused';
-      const before = { executions, wakes };
-      assert.equal((await (await desktop('status')).json()).url, undefined);
-      assert.deepEqual({ executions, wakes }, before, 'GET never probes or wakes');
-      assert.equal((await desktop('start', 'POST')).status, 202);
-      const resumed = await complete();
-      assert.equal(wakes, before.wakes + 1);
-      assert.equal(resumed.url, ready.url);
-      assert.equal(resumed.operation, ready.operation);
-      assert.equal(previewCalls, 1);
-    });
-    await check('v2 Start replaces a stale lease after a same-ID full reboot', async () => {
-      bootId = '88888888-9999-4aaa-8bbb-cccccccccccc'; desktopUp = false;
-      const before = executions;
-      await desktop('status'); assert.equal(executions, before, 'GET never probes boot generation');
-      assert.equal((await desktop('start', 'POST')).status, 202);
-      const relaunched = await complete();
-      assert.notEqual(relaunched.operation, ready.operation);
-      assert.notEqual(relaunched.url, ready.url);
-      assert.equal(previewCalls, 2);
-      ready = relaunched;
-    });
-    await check('v2 Stop never resumes, and explicit Start or Restart finishes old cleanup before launching', async () => {
-      for (const action of ['start', 'restart']) {
-        state = 'paused'; computerUse = [];
-        const before = wakes;
-        const stopped = await desktop('stop', 'POST');
-        assert.equal(stopped.status, 202);
-        assert.deepEqual(await stopped.json(), { phase: 'stopped', access_revoked: true, cleanup_pending: true });
-        await desktop('__tick');
-        assert.equal(wakes, before);
-        assert.deepEqual(computerUse, []);
-        assert.equal((await desktop(action, 'POST')).status, 202);
-        const reopened = await complete();
-        assert.equal(wakes, before + 1);
-        assert.equal(registeredAtDesktopStop, 0);
-        assert.deepEqual(computerUse, ['POST stop', 'GET status', 'POST start', 'GET status']);
-        assert.notEqual(reopened.url, ready.url);
-        ready = reopened;
-      }
-    });
-    await check('v2 ttyd reaches its app-auth relay with a renamed credential the app still verifies', async () => {
-      state = 'running';
-      const tt = action => req(`/__test/${action}?service=ttyd`, action === '__tick' || action === 'status' ? {} : { method: 'POST' });
-      assert.equal((await tt('start')).status, 202);
-      let op;
-      for (let i = 0; i < 14 && op?.phase !== 'ready'; i++) op = await (await tt('__tick')).json();
-      assert.equal(op.phase, 'ready', JSON.stringify(op));
-      assert.equal(signedPorts.at(-1), 8784, 'signed preview targets the relay, not the app port');
-      assert.equal(incomingOperation.app_auth_relay_port, 8784);
-      const ttydRoot = '/home/daytona/.local/share/bayleaf/ttyd';
-      assert.equal(v2Uploads.get(`${ttydRoot}/app-auth-relay.py`), await readFile(root + 'scripts/app-auth-relay.py', 'utf8'));
-      const row = await db.prepare("SELECT * FROM preview_registrations WHERE slot='__ttyd'").first();
-      assert.equal(row.access, 'private');
-      assert(!JSON.stringify([row, op]).includes(ttydAuth));
-      const origin = new URL(op.url).origin;
-      const session = jwt({ aud: origin, generation: row.generation, exp: row.expires_at }, previewSecret);
-      const headers = { Cookie: '__Host-bl-preview-session=' + session, 'X-Test-Origin': origin, 'Sec-Fetch-Site': 'same-origin' };
-      const basic = 'Basic ' + Buffer.from('bayleaf:' + ttydAuth).toString('base64');
-      const previous = lastForwarded;
-      assert.equal((await worker.fetch(op.url + 'token', { headers: { 'X-Test-Origin': origin, 'X-BayLeaf-App-Authorization': basic } })).status, 401);
-      assert.equal(lastForwarded, previous, 'owner gate precedes any credential injection');
-      assert.equal((await worker.fetch(op.url + 'token', { headers: { ...headers, Authorization: 'Bearer spoofed',
-        'X-BayLeaf-App-Authorization': 'Basic spoofed' } })).status, 200);
-      assert.equal(new URL(lastForwardedUrl).hostname.split('-')[0], '8784');
-      assert.equal(lastForwarded['x-bayleaf-app-authorization'], basic);
-      assert.equal(lastForwarded.authorization, 'Bearer spoofed', 'browser Bearer is untouched; Daytona v2 strips it');
-      const socket = await worker.fetch(op.url + 'ws', { headers: { ...headers, Upgrade: 'websocket' } });
-      assert.equal(socket.status, 101); socket.webSocket.accept();
-      assert.equal(lastForwarded['x-bayleaf-app-authorization'], basic); socket.webSocket.close();
-      assert.equal((await worker.fetch(op.url + 'ws', { headers: { ...headers, Upgrade: 'websocket', 'X-Test-Origin': 'https://evil.test' } })).status, 403);
-    });
-    await check('v2 Stop can cancel an explicit launch before deferred cleanup wakes the machine', async () => {
-      state = 'paused'; computerUse = [];
-      const before = wakes;
-      await desktop('stop', 'POST');
-      assert.equal((await desktop('start', 'POST')).status, 202);
-      assert.equal((await desktop('stop', 'POST')).status, 202);
-      await desktop('__tick');
-      assert.equal(wakes, before);
-      assert.deepEqual(computerUse, []);
-    });
-  } else {
   await check('sandbox remote config is native V2, owner-key gated, and separate from desktop config',async()=>{
     const path='/sandbox/.well-known/opencode';
     const discovery=await (await req(path,{owner:false})).json();
@@ -465,7 +327,7 @@ try {
     assert.equal(creates+wakes+executions,0);
   });
   await check('passive dashboard/status probes never wake or contact Toolbox',async()=>{
-    for(let i=0;i<4;i++) assert.equal((await status()).machine,'archived');
+    for(let i=0;i<4;i++) assert.equal((await status()).machine,'stopped');
     assert.equal(creates+wakes+executions,0);
   });
   await check('usage inspection reports separate units, ignores stale counters, and never provisions keys',async()=>{
@@ -483,7 +345,7 @@ try {
     assert.equal(creates+wakes+executions,0);
   });
   let ready;
-  await check('concurrent starts converge; archived setup completes through persisted phases',async()=>{
+  await check('concurrent starts converge; stopped setup completes through persisted phases',async()=>{
     const results=await Promise.all(Array.from({length:8},async()=> (await action('start')).json()));
     assert.equal(new Set(results.map(x=>x.operation)).size,1);
     ready=await finish(); assert.equal(ready.phase,'ready');
@@ -492,14 +354,15 @@ try {
     assert.equal(wakes,1);assert.equal(launches,1);assert.equal(creates,0);
     assert.match(ready.url,/owner-private-[a-f0-9]{24}/);
   });
-  await check('ready reopen preserves deadline and origin; status stays passive',async()=>{
-    const before=executions;
+  await check('ready reopen preserves deadline and origin after only a boot-ID check; status stays passive',async()=>{
+    const before=executions, reads=bootReads;
     for(let i=0;i<3;i++) {
       const result=await (await action('start')).json();
       assert.equal(result.url,ready.url);assert.equal(result.deadline,ready.deadline);
       await status();
     }
-    assert.equal(executions,before);assert.equal(previewCalls,1);
+    assert.equal(bootReads,reads+3);assert.equal(executions,before+3,'Start reads only the boot ID');
+    assert.equal(previewCalls,1);
   });
   await check('another owner has independent lifecycle state; legacy continue action does not exist',async()=>{
     const headers={Authorization:'Bearer sk-bayleaf-other'};
@@ -556,7 +419,7 @@ try {
     assert.equal((await worker.fetch(ready.url)).status,404);
     assert.equal((await db.prepare("SELECT count(*) n FROM sandbox_credentials WHERE email=? AND state='active'").bind(email).first()).n,0);
     assert.equal((await db.prepare('SELECT revoked FROM user_keys WHERE email=?').bind(email).first()).revoked,0);
-    state='archived';
+    state='stopped';
   });
   await check('explicit restart reauthorizes sandbox access and gets a fresh origin',async()=>{
     await action('restart'); const next=await finish(); assert.equal(next.phase,'ready');
@@ -584,11 +447,10 @@ try {
     lookupFails=true;await action('start');const result=await tick();
     assert.equal(result.phase,'failed');assert.equal(creates,0);lookupFails=false;
   });
-  await check('small or public existing sandboxes fail before credential transfer or compute changes',async()=>{
+  await check('small existing sandboxes fail before credential transfer or compute changes',async()=>{
     const before = executions;
     memory=1; await action('start');assert.equal((await tick()).error,'requires_2_gib');
-    memory=4; isPublic=true; await action('start');assert.equal((await tick()).error,'public_sandbox');
-    isPublic=false;assert.equal(executions,before);assert.equal(creates,0);
+    memory=4;assert.equal(executions,before);assert.equal(creates,0);
   });
   await check('Toolbox readiness lag retries across durable alarms',async()=>{
     toolboxFailures=2;await action('start');const op=await finish();
@@ -618,7 +480,7 @@ try {
     assert.equal((await (await wake()).json()).state,'absent');
     lookupFails=true;assert.equal((await wake()).status,503);lookupFails=false;
     assert.equal(creates,before.creates);
-    exists=true;isPublic=true;assert.equal((await wake()).status,503);isPublic=false;
+    exists=true;
     state='starting';assert.equal((await (await wake()).json()).state,'transitioning');
     state='started';
     await action('start');
@@ -628,13 +490,13 @@ try {
   });
   await check('passive status rediscovers a machine replaced by Chat/API without inheriting application readiness',async()=>{
     const before={creates,wakes,executions,previewCalls};
-    machineId='replacement-sandbox';
+    machineId='sbx_replacement-sandbox';
     const result=await status();
     assert.equal(result.machine,'started');assert.equal(result.phase,'idle');assert.equal(result.url,undefined);
     assert.deepEqual({creates,wakes,executions,previewCalls},before);
   });
   await check('code-server dispatch, busy response, readiness identity and independent status',async()=>{
-    state='archived'; // The replacement must be stopped before its first secret attachment.
+    state='stopped';
     await action('restart');ready=await finish();assert.equal(ready.phase,'ready');
     const endpoint='/__test/';
     const cs=path=>endpoint+path+'?service=code-server';
@@ -654,7 +516,7 @@ try {
     for(let i=0;i<6;i++){editor=await (await req(cs('__tick'))).json();if(editor.phase==='ready')break;}
     assert.equal(editor.phase,'ready');assert.notEqual(editor.url,ready.url);
     assert.equal((await status()).url,ready.url);
-    assert(credentialsUploaded.every(path=>path.endsWith('credentials/incoming')),'editor uploads only its sandbox placeholder');
+    assert.deepEqual(credentialUploads,[],'apps read the mounted sandbox secret; no credential file is uploaded');
     const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__code-server'").first();
     assert.equal(row.deployment,'__browser');assert(row.owner_key_hash);assert.equal(row.expires_at,editor.deadline);
     const origin=new URL(editor.url).origin;
@@ -693,7 +555,6 @@ try {
     const path=(service,action)=>'/__test/'+action+'?service='+service;
     const complete=async service=>{let op;for(let i=0;i<12;i++){op=await (await req(path(service,'__tick'))).json();if(op.phase==='ready')return op;}throw new Error(JSON.stringify(op));};
     await req(path('code-server','start'),{method:'POST'});const editor=await complete('code-server');
-    const uploads=credentialsUploaded.length;
     memory=1;
     await req(path('dufs','start'),{method:'POST'});let files=await complete('dufs');
     memory=4;
@@ -738,9 +599,9 @@ try {
     assert.equal(lastForwarded,forwarded,'retired slot must never reach the application');
     await db.prepare('DELETE FROM preview_registrations WHERE hostname=?').bind(legacy.hostname).run();
   });
-  await check('Jupyter keeps native token behind owner/origin gates on HTTP and WS, uploads only its sandbox placeholder, and coexists',async()=>{
+  await check('Jupyter keeps native token behind owner/origin gates on HTTP and WS through its relay, and coexists',async()=>{
     const jp=action=>'/__test/'+action+'?service=jupyter';
-    const uploads=credentialsUploaded.length, sibling=(await status()).url;
+    const sibling=(await status()).url;
     const complete=async()=>{let op;for(let i=0;i<12;i++){op=await(await req(jp('__tick'))).json();if(op.phase==='ready')return op;}throw new Error('Jupyter failed: '+JSON.stringify(op));};
     await req(jp('start'),{method:'POST'});let op=await complete();
     assert.equal((await status()).url,sibling);
@@ -760,28 +621,34 @@ try {
     const headers={Cookie:'__Host-bl-preview-session='+session,'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin'};
     assert.equal((await worker.fetch(op.url+'api/status',{headers:{'X-Test-Origin':origin,Authorization:'token '+jupyterAuth}})).status,401);
     assert.equal((await worker.fetch(op.url+'api/status',{headers:{...headers,Authorization:'spoofed'}})).status,200);
-    assert.equal(lastForwarded.authorization,'token '+jupyterAuth);
+    assert.equal(signedPorts.at(-1),8783,'signed preview targets the relay, not the app port');
+    assert.equal(lastForwarded['x-bayleaf-app-authorization'],'token '+jupyterAuth);
+    assert.equal(lastForwarded.authorization,undefined,'a non-Bearer browser Authorization is dropped');
     const previous=lastForwarded;
     assert.equal((await worker.fetch(op.url+'api/kernels',{method:'POST',headers:{...headers,'X-Test-Origin':'https://evil.test'},body:'{}'})).status,403);
     assert.equal(lastForwarded,previous,'denied mutation never receives app token');
     assert.equal((await worker.fetch(op.url+'api/kernels/fixture/channels',{headers:{Upgrade:'websocket','X-Test-Origin':origin}})).status,401);
     assert.equal((await worker.fetch(op.url+'api/kernels/fixture/channels',{headers:{...headers,Upgrade:'websocket','X-Test-Origin':'https://evil.test'}})).status,403);
     const socket=await worker.fetch(op.url+'api/kernels/fixture/channels',{headers:{...headers,Upgrade:'websocket',Authorization:'spoofed'}});
-    assert.equal(socket.status,101);socket.webSocket.accept();assert.equal(lastForwarded.authorization,'token '+jupyterAuth);
+    assert.equal(socket.status,101);socket.webSocket.accept();assert.equal(lastForwarded['x-bayleaf-app-authorization'],'token '+jupyterAuth);
     const echoed=new Promise(resolve=>socket.webSocket.addEventListener('message',event=>resolve(event.data),{once:true}));
     socket.webSocket.send('synthetic kernel message');assert.equal(await echoed,'synthetic kernel message');socket.webSocket.close();
     const old=op.url;await req(jp('restart'),{method:'POST'});op=await complete();assert.notEqual(op.url,old);
     assert.equal((await status()).url,sibling);
     await req(jp('__expire'));assert.equal((await(await req(jp('status'))).json()).url,undefined);
   });
-  await check('ttyd private HTTP/WS inject Basic auth only after owner/origin gates; placeholder only, independent restart',async()=>{
+  await check('ttyd private HTTP/WS reach its app-auth relay only after owner/origin gates; independent restart',async()=>{
     assert.equal((await worker.fetch(api+'/sandbox/expose',{method:'POST',headers:{Authorization:'Bearer sk-bayleaf-rotated','Content-Type':'application/json'},body:JSON.stringify({port:8794,access:'public'})})).status,400);
     const tt=action=>'/__test/'+action+'?service=ttyd';
-    const uploads=credentialsUploaded.length, sibling=(await status()).url;
+    const sibling=(await status()).url;
     const complete=async()=>{for(let i=0;i<12;i++){const op=await(await req(tt('__tick'))).json();if(op.phase==='ready')return op;}throw new Error('ttyd failed');};
     await req(tt('start'),{method:'POST'});let op=await complete();
     assert.equal((await status()).url,sibling);
     assert(!JSON.stringify(op).includes(ttydAuth));assert.notEqual(ttydAuth,jupyterAuth);
+    assert.equal(signedPorts.at(-1),8784,'signed preview targets the relay, not the app port');
+    assert.equal(incomingOperation.app_auth_relay_port,8784);
+    const ttydRoot='/home/daytona/.local/share/bayleaf/ttyd';
+    assert.equal(uploads.get(ttydRoot+'/app-auth-relay.py'),await readFile(root+'scripts/app-auth-relay.py','utf8'));
     const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__ttyd'").first();
     assert.equal(row.access,'private');assert(!JSON.stringify(row).includes(ttydAuth));
     const origin=new URL(op.url).origin;
@@ -789,14 +656,17 @@ try {
     const headers={Cookie:'__Host-bl-preview-session='+session,'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin'};
     const basic='Basic '+Buffer.from('bayleaf:'+ttydAuth).toString('base64');
     assert.equal((await worker.fetch(op.url+'token',{headers:{'X-Test-Origin':origin,Authorization:basic}})).status,401);
-    assert.equal((await worker.fetch(op.url+'token',{headers:{...headers,Authorization:'spoofed'}})).status,200);
-    assert.equal(lastForwarded.authorization,basic);
+    assert.equal((await worker.fetch(op.url+'token',{headers:{...headers,Authorization:'Bearer spoofed',
+      'X-BayLeaf-App-Authorization':'Basic spoofed'}})).status,200);
+    assert.equal(new URL(lastForwardedUrl).hostname.split('-')[0],'8784');
+    assert.equal(lastForwarded['x-bayleaf-app-authorization'],basic);
+    assert.equal(lastForwarded.authorization,'Bearer spoofed','browser Bearer is untouched; Daytona v2 strips it');
     const previous=lastForwarded;
     assert.equal((await worker.fetch(op.url+'ws',{headers:{Upgrade:'websocket','X-Test-Origin':origin,Authorization:basic}})).status,401);
     assert.equal((await worker.fetch(op.url+'ws',{headers:{...headers,Upgrade:'websocket','X-Test-Origin':'https://evil.test'}})).status,403);
     assert.equal(lastForwarded,previous);
     const socket=await worker.fetch(op.url+'ws',{headers:{...headers,Upgrade:'websocket',Authorization:'spoofed'}});
-    assert.equal(socket.status,101);socket.webSocket.accept();assert.equal(lastForwarded.authorization,basic);socket.webSocket.close();
+    assert.equal(socket.status,101);socket.webSocket.accept();assert.equal(lastForwarded['x-bayleaf-app-authorization'],basic);socket.webSocket.close();
     const old=op.url;await req(tt('restart'),{method:'POST'});op=await complete();assert.notEqual(op.url,old);
     assert.equal((await status()).url,sibling);
     await req(tt('__expire'));assert.equal((await(await req(tt('status'))).json()).url,undefined);
@@ -831,7 +701,7 @@ try {
      assert.equal((await post({...cookie,'X-Test-Origin':'https://evil.test'})).status,403);
      assert.equal(lastForwarded,previous);
      assert.equal((await post({...cookie,'X-Test-Origin':origin,Authorization:'Bearer spoofed'})).status,200);
-     assert.equal(lastForwarded.authorization,'Basic '+Buffer.from('opencode:'+opencodeAuth).toString('base64'));
+     assert.equal(lastForwarded['x-bayleaf-app-authorization'],'Basic '+Buffer.from('opencode:'+opencodeAuth).toString('base64'));
      assert.equal(lastForwarded.cookie,undefined,'no browser cookie required by the upstream');
      const terminal=headers=>worker.fetch(op.url+'api/pty/fixture/connect',{headers:{...headers,Upgrade:'websocket'}});
      assert.equal((await terminal({'X-Test-Origin':origin})).status,401);
@@ -839,7 +709,7 @@ try {
      const socket=await terminal({...cookie,'X-Test-Origin':origin});
      assert.equal(socket.status,101);socket.webSocket.accept();
      assert.equal(lastForwarded.origin,origin);
-     assert.equal(lastForwarded.authorization,'Basic '+Buffer.from('opencode:'+opencodeAuth).toString('base64'));
+     assert.equal(lastForwarded['x-bayleaf-app-authorization'],'Basic '+Buffer.from('opencode:'+opencodeAuth).toString('base64'));
      socket.webSocket.close();
      const firstAuth=opencodeAuth, firstUrl=op.url;
      await req(path('__expire'));
@@ -856,7 +726,7 @@ try {
      assert.equal((await worker.fetch(op.url+'api/session',{method:'POST',body:'{}',headers:{
        Cookie:'__Host-bl-preview-session='+freshSession,'Sec-Fetch-Site':'same-origin','X-Test-Origin':freshOrigin,
      }})).status,200);
-     assert.equal(lastForwarded.authorization,'Basic '+Buffer.from('opencode:'+firstAuth).toString('base64'));
+     assert.equal(lastForwarded['x-bayleaf-app-authorization'],'Basic '+Buffer.from('opencode:'+firstAuth).toString('base64'));
      await req(path('__expire'));
      assert.equal((await status()).url,sibling);
      wrongOpencodeOrigin=true;
@@ -885,7 +755,7 @@ try {
     const headers={Cookie:'__Host-bl-preview-session='+session,'X-Test-Origin':origin,'Sec-Fetch-Site':'same-origin'};
     const socket=await worker.fetch(op.url+'api/kernels/fixture/channels',{headers:{...headers,Upgrade:'websocket'}});
     assert.equal(socket.status,101);socket.webSocket.accept();
-    assert.equal(lastForwarded.authorization,'token '+token);
+    assert.equal(lastForwarded['x-bayleaf-app-authorization'],'token '+token);
     const closed=new Promise(resolve=>socket.webSocket.addEventListener('close',resolve,{once:true}));
     const stopped=await req(jp('stop'),{method:'POST'});assert.equal(stopped.status,200);
     const result=await stopped.json();assert.equal(result.access_revoked,true);assert.equal(result.cleanup_pending,false);
@@ -906,31 +776,37 @@ try {
     await db.prepare("UPDATE preview_registrations SET access='private' WHERE hostname=?").bind(siblingHost).run();
     await req(jp('stop'),{method:'POST'});
   });
-  await check('stop during setup cannot register later; partial cleanup retries and sleeping stop never wakes',async()=>{
+  await check('stop during setup cannot register later; Start waits for partial cleanup and sleeping stop never wakes',async()=>{
     const cm=action=>'/__test/'+action+'?service=jupyter';
+    const registered=async()=>(await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__jupyter'").first()).n;
     await req(cm('start'),{method:'POST'});
     for(let i=0;i<4;i++)await req(cm('__tick'));
     stopFails=true;
     const partial=await req(cm('stop'),{method:'POST'});assert.equal(partial.status,202);
     const body=await partial.json();assert.equal(body.access_revoked,true);assert.equal(body.cleanup_pending,true);
-    assert.equal((await req(cm('start'),{method:'POST'})).status,409);
+    const relaunch=await req(cm('start'),{method:'POST'});assert.equal(relaunch.status,202);
+    const {operation}=await relaunch.json();
     const probes=executions;await req(cm('status'));assert.equal(executions,probes,'status remains passive');
+    const pending=await(await req(cm('__tick'))).json();
+    assert.equal(pending.phase,'stopped');assert.equal(pending.cleanupPending,true,'failed cleanup holds the relaunch');
+    assert.equal(pending.operation,operation);assert.equal(await registered(),0);
     stopFails=false;
-    const finished=await(await req(cm('__tick'))).json();assert.equal(finished.phase,'stopped');assert.equal(finished.cleanupPending,false);
-    assert.equal((await db.prepare("SELECT count(*) n FROM preview_registrations WHERE slot='__jupyter'").first()).n,0);
-    await req(cm('start'),{method:'POST'});await req(cm('__tick'));
-    state='archived';const before={executions,wakes};
+    const relaunched=await(await req(cm('__tick'))).json();
+    assert.equal(relaunched.phase,'opening');assert.notEqual(relaunched.operation,operation,'only finished cleanup launches anew');
+    assert.equal(await registered(),0);
+    await req(cm('__tick'));
+    state='stopped';const before={executions,wakes};
     assert.equal((await req(cm('stop'),{method:'POST'})).status,200);
     assert.deepEqual({executions,wakes},before);state='started';
   });
   await check('Desktop uses Daytona computer use, never installs or creates, lands on noVNC; stop revokes first and never wakes',async()=>{
     const dt=action=>'/__test/'+action+'?service=desktop';
     const complete=async()=>{let op;for(let i=0;i<12;i++){op=await(await req(dt('__tick'))).json();if(op.phase!=='opening')return op;}throw new Error(JSON.stringify(op));};
-    const sibling=(await status()).url, before={launches,creates,creationRequests,uploads:credentialsUploaded.length,stops};
+    const sibling=(await status()).url, before={launches,creates,creationRequests,uploads:credentialUploads.length,stops};
     computerUse=[];
     await req(dt('start'),{method:'POST'});let op=await complete();
     assert.equal(op.phase,'ready');assert.deepEqual(computerUse,['POST start','GET status']);
-    assert.deepEqual({launches,creates,creationRequests,uploads:credentialsUploaded.length,stops},before,'no installer, creation or credential upload');
+    assert.deepEqual({launches,creates,creationRequests,uploads:credentialUploads.length,stops},before,'no installer, creation or credential upload');
     assert.equal(new URL(op.url).pathname+new URL(op.url).search,'/vnc.html?autoconnect=true&resize=scale&reconnect=true&path=websockify');
     const row=await db.prepare("SELECT * FROM preview_registrations WHERE slot='__desktop'").first();
     assert.equal(row.access,'private');assert.equal(new URL(op.url).hostname,row.hostname);
@@ -939,17 +815,17 @@ try {
     assert.deepEqual({executions,calls:computerUse.length,wakes},passive,'status never calls Toolbox');
     assert.equal((await worker.fetch(op.url)).status,401,'private: anonymous requests are denied');
     assert.equal((await status()).url,sibling);
-    // Restart is a clean session: stop, reap, start. Lowercase records also parse.
-    desktopCasing='lower';computerUse=[];
+    // Restart is a clean session: stop and confirm inactive, then start.
+    computerUse=[];
     await req(dt('restart'),{method:'POST'});op=await complete();
-    assert.equal(op.phase,'ready');assert.deepEqual(computerUse,['POST stop','POST start','GET status']);
+    assert.equal(op.phase,'ready');assert.deepEqual(computerUse,['POST stop','GET status','POST start','GET status']);
     assert.equal(registeredAtDesktopStop,0,'restart revoked the old link before stopping');
-    desktopCasing='pascal';computerUse=[];
+    computerUse=[];
     const stopped=await req(dt('stop'),{method:'POST'});assert.equal(stopped.status,200);
     const result=await stopped.json();
-    assert.equal(result.access_revoked,true);assert.equal(result.cleanup_pending,false);assert.equal(result.processes_reaped,3);
+    assert.equal(result.access_revoked,true);assert.equal(result.cleanup_pending,false);assert.equal(result.processes_reaped,0);
     assert.equal(registeredAtDesktopStop,0,'access is revoked before compute is touched');
-    assert.deepEqual(computerUse,['POST stop']);assert.equal(desktopUp,false);
+    assert.deepEqual(computerUse,['POST stop','GET status']);assert.equal(desktopUp,false);
     // A stack that never reports active fails boundedly.
     desktopStartFails=true;await req(dt('start'),{method:'POST'});op=await complete();
     assert.equal(op.error,'desktop_not_ready');assert.equal(computerUse.filter(c=>c==='POST start').length,3);
@@ -987,38 +863,90 @@ try {
     assert.deepEqual(await (await req(cs('__alarm-now'))).json(),retry);
     assert.equal((await (await req(cs('__tick'))).json()).invalidated,true);
   });
-  await check('documented authentication and permission rejections permit corrected creation retry',async()=>{
-    for(const status of [401,403]) {
-      exists=false;rejectCreate=status;
-      const before=creationRequests;
-      await action('restart');assert.equal((await tick()).error,'creation_failed');
-      rejectCreate=0;await action('start');ready=await finish();
-      assert.equal(ready.phase,'ready');assert.equal(creationRequests,before+2);
-    }
-  });
-  await check('undocumented rejection, 5xx and transport loss retain owner-wide creation ambiguity',async()=>{
-    for(const outcome of ['400','503','transport']) {
-      exists=false;rejectCreate=outcome==='400'?400:0;failCreate=outcome==='503';
+  await check('failed or lost creation fails visibly and a retry replays the same idempotency key',async()=>{
+    for(const outcome of ['503','transport']) {
+      exists=false;failCreate=outcome==='503';createKeys=[];
+      const before={creates,creationRequests};
       await req('/sandbox/browser/restart',{method:'POST',headers:outcome==='transport'?{'X-Test-Create-Transport':'1'}:{}});
-      assert.equal((await tick()).error,'creation_uncertain');
-      const before=creationRequests;
-      await req('/__test/start?service=code-server',{method:'POST'});
-      assert.equal((await (await req('/__test/__tick?service=code-server')).json()).error,'creation_uncertain');
-      assert.equal(creationRequests,before);
-      rejectCreate=0;failCreate=false;exists=true;
+      assert.equal((await tick()).error,'creation_failed');
+      failCreate=false;
       await action('start');ready=await finish();assert.equal(ready.phase,'ready');
+      assert.equal(creates,before.creates+1,'exactly one machine is created');
+      assert.equal(createKeys.length,outcome==='transport'?1:2);
+      assert.equal(new Set(createKeys).size,1,'retries reuse the owner-scoped idempotency key');
     }
   });
-  await check('ambiguous creation intent survives another service attempt',async()=>{
-    exists=false;failCreate=true;
-    const before=creationRequests;
-    await action('restart');assert.equal((await tick()).phase,'failed');
-    assert.equal(creationRequests,before+1);
-    await req('/__test/start?service=code-server',{method:'POST'});
-    const editor=await (await req('/__test/__tick?service=code-server')).json();
-    assert.equal(editor.error,'creation_uncertain');assert.equal(creationRequests,before+1);
-    failCreate=false;exists=true;
-  });
+  {
+    machineId = 'sbx_browser-fixture'; state = 'started'; exists = true;
+    await db.prepare('UPDATE user_keys SET daytona_sandbox_id=? WHERE email=?').bind(machineId, email).run();
+    const desktop = (name, method = 'GET') => req(`/__test/${name}?service=desktop`, { method });
+    const complete = async () => {
+      for (let i = 0; i < 12; i++) {
+        await desktop('__tick');
+        const status = await (await desktop('status')).json();
+        if (status.phase !== 'opening') {
+          assert.equal(status.phase, 'ready', JSON.stringify(status));
+          return status;
+        }
+      }
+      assert.fail('Desktop lifecycle did not complete');
+    };
+    let ready;
+    const previewBase = previewCalls;
+    await check('Start verifies boot generation, keeping the lease after pause', async () => {
+      assert.equal((await desktop('start', 'POST')).status, 202);
+      ready = await complete();
+      state = 'paused';
+      const before = { executions, wakes };
+      assert.equal((await (await desktop('status')).json()).url, undefined);
+      assert.deepEqual({ executions, wakes }, before, 'GET never probes or wakes');
+      assert.equal((await desktop('start', 'POST')).status, 202);
+      const resumed = await complete();
+      assert.equal(wakes, before.wakes + 1);
+      assert.equal(resumed.url, ready.url);
+      assert.equal(resumed.operation, ready.operation);
+      assert.equal(previewCalls, previewBase + 1);
+    });
+    await check('Start replaces a stale lease after a same-ID full reboot', async () => {
+      bootId = '88888888-9999-4aaa-8bbb-cccccccccccc'; desktopUp = false;
+      const before = executions;
+      await desktop('status'); assert.equal(executions, before, 'GET never probes boot generation');
+      assert.equal((await desktop('start', 'POST')).status, 202);
+      const relaunched = await complete();
+      assert.notEqual(relaunched.operation, ready.operation);
+      assert.notEqual(relaunched.url, ready.url);
+      assert.equal(previewCalls, previewBase + 2);
+      ready = relaunched;
+    });
+    await check('Stop never resumes, and explicit Start or Restart finishes old cleanup before launching', async () => {
+      for (const action of ['start', 'restart']) {
+        state = 'paused'; computerUse = [];
+        const before = wakes;
+        const stopped = await desktop('stop', 'POST');
+        assert.equal(stopped.status, 202);
+        assert.deepEqual(await stopped.json(), { phase: 'stopped', access_revoked: true, cleanup_pending: true });
+        await desktop('__tick');
+        assert.equal(wakes, before);
+        assert.deepEqual(computerUse, []);
+        assert.equal((await desktop(action, 'POST')).status, 202);
+        const reopened = await complete();
+        assert.equal(wakes, before + 1);
+        assert.equal(registeredAtDesktopStop, 0);
+        assert.deepEqual(computerUse, ['POST stop', 'GET status', 'POST start', 'GET status']);
+        assert.notEqual(reopened.url, ready.url);
+        ready = reopened;
+      }
+    });
+    await check('Stop can cancel an explicit launch before deferred cleanup wakes the machine', async () => {
+      state = 'paused'; computerUse = [];
+      const before = wakes;
+      await desktop('stop', 'POST');
+      assert.equal((await desktop('start', 'POST')).status, 202);
+      assert.equal((await desktop('stop', 'POST')).status, 202);
+      await desktop('__tick');
+      assert.equal(wakes, before);
+      assert.deepEqual(computerUse, []);
+    });
   }
   console.log(checks+' lifecycle checks passed (synthetic provider; no live deployment).');
 } finally {await mf.dispose();}

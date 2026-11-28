@@ -3,6 +3,31 @@
 Dated record of past runs of [`maintain-sandbox.md`](../playbooks/maintain-sandbox.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-28 (#172): Deployed the v2-only API Worker (`4474242a`, 100%).
+  Production exec on the same v2 binding, managed OpenChamber Start, and the
+  Sandboxes landing page passed. Automatic v2 deletion stayed disabled.
+  The 08:17 UTC workspace retention dry run scanned 24 workspaces, with
+  zero candidates, failures, or deletions.
+
+- 2026-11-28 (#172): Removed the three production D1 cutover views and
+  their two triggers. Verified zero guard objects and all 24 v2 bindings and
+  import activity baselines intact. The v2-only Worker candidate passed
+  disposable live provisioning, file I/O, private previews and Desktop RFB,
+  including owner denial, revocation and pause/resume.
+
+- 2026-11-28 (#172): Rotated the shared API and Sandboxes Worker to the
+  scoped Daytona key (`b6024e27`, 100%). Existing v2 exec, secret-state
+  readback, managed OpenChamber Open, and the Sandboxes landing page passed.
+
+- 2026-11-28 08:00 UTC (#172): API `7fe5d39a` retired the 22 legacy
+  sandbox credentials on its hourly run. D1 had zero remaining legacy
+  rows, and exact-name Daytona lookup confirmed all 22 secrets absent.
+
+- 2026-11-27 Pacific (#172): With operator approval, deleted the 24 original
+  v0 workspaces by exact ID. Readback confirmed all 24 deletions, zero
+  BayLeaf v0 workspaces, and all 24 v2 owner bindings intact. The private
+  handoff directory holds the retirement receipts.
+
 - 2026-11-27 Pacific (#172 follow-up): An imported workspace retained the v0
   explicit proxy and hid v2's public CA files behind a root-only directory.
   With the managed launcher repair, ordinary-user Python, Node, and isolated

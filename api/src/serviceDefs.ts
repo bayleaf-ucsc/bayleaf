@@ -66,13 +66,13 @@ export const managedSlot = (slot: string) => Object.values(SERVICE_DEFS).some(de
 export const managedAccess = (_slot: string) => 'private' as const;
 export const managedAppAuth = (slot: string) =>
   slot === '__jupyter' ? 'token' : slot === '__ttyd' ? 'bayleaf' : slot === '__opencode-web' ? 'opencode' : null;
-/** Daytona v2 signed previews strip Authorization. Under v2 the gateway sends a
+/** Daytona v2 signed previews strip Authorization. The gateway sends a
  * managed app's own credential in this header to the sandbox relay
  * (scripts/app-auth-relay.py) on `relayPort`, which restores Authorization for
- * the app's native check. Legacy Daytona keeps direct Authorization. */
+ * the app's native check. */
 export const APP_AUTH_RELAY_HEADER = 'X-BayLeaf-App-Authorization';
-export const appAuthRelayPort = (def: ServiceDef, v2: boolean): number | null =>
-  v2 && managedAppAuth(def.slot) && 'relayPort' in def ? def.relayPort : null;
+export const appAuthRelayPort = (def: ServiceDef): number | null =>
+  'relayPort' in def ? def.relayPort : null;
 /** Fixed post-login landing path for a managed slot; never caller-selected. */
 export const managedLanding = (slot: string) => {
   const def = Object.values(SERVICE_DEFS).find(def => def.slot === slot);

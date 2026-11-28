@@ -1,4 +1,4 @@
-/** Synthetic control-plane checks. No real sandbox mutations or credentials. */
+/** Synthetic v2 control-plane checks. No real sandbox mutations or credentials. */
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { readFileSync } from 'node:fs';
@@ -9,169 +9,93 @@ const { reapInactiveSandboxes, SANDBOX_REAPER_CRON } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 const now = Date.parse('2026-10-06T08:17:00Z');
 const cutoff = now - 30 * 86400000;
-const machine = (id, overrides = {}) => ({ id, state: 'archived', desiredState: 'archived',
-  labels: { 'chat.bayleaf.dev': 'synthetic@ucsc.edu' },
-  lastActivityAt: new Date(cutoff).toISOString(), ...overrides });
+const id = 'sbx_imported';
+const ownerLabel = 'chat.bayleaf.dev';
+const fixture = { id, status: 'paused', labels: { [ownerLabel]: 'synthetic@ucsc.edu' },
+  lifecycle_policy: { last_activity_at: new Date(now - 1000).toISOString() } };
 const originalFetch = globalThis.fetch;
-let calls, cleared, inventory, details, verification, deletionStatus;
-const env = { SANDBOX_REAPER_MODE: 'delete', DAYTONA_API_URL: 'https://daytona.example.test/api',
-  DAYTONA_API_KEY: 'synthetic', DAYTONA_DEPLOYMENT_LABEL: 'chat.bayleaf.dev',
-  DB: { prepare(sql) {
-    if (sql.startsWith('UPDATE sandbox_credentials')) return {bind(){ return {async run(){}}; }};
-    assert.equal(sql, 'UPDATE user_keys SET daytona_sandbox_id = NULL WHERE daytona_sandbox_id = ?');
-    return { bind(id) { return { async run() { cleared.push(id); } }; } };
-  } } };
-function setup(items) {
-  calls = []; cleared = []; inventory = [{ items, nextCursor: null }];
-  details = new Map(items.map(m => [m.id, m])); verification = 404; deletionStatus = 200;
-  const deleted = new Set();
-  globalThis.fetch = async (url, options) => {
-    const u = new URL(url);
-    assert.equal(u.hostname, 'daytona.example.test');
-    assert.equal(options.headers.Authorization, 'Bearer synthetic');
-    assert.equal(options.redirect, 'manual');
-    assert.ok(options.signal instanceof AbortSignal);
-    calls.push({ path: u.pathname, search: u.search, method: options.method });
-    if (u.pathname === '/api/sandbox') {
-      const page = u.searchParams.has('cursor') ? Number(u.searchParams.get('cursor')) : 0;
-      return Response.json(inventory[page]);
-    }
-    const id = decodeURIComponent(u.pathname.split('/').at(-1));
-    if (options.method === 'DELETE') {
-      deleted.add(id); return new Response(null, { status: deletionStatus });
-    }
-    if (deleted.has(id)) return typeof verification === 'number'
-      ? new Response(null, { status: verification }) : Response.json(verification);
-    const detail = details.get(id);
-    return typeof detail === 'number' ? new Response(null, { status: detail }) : Response.json(detail);
-  };
+let pages, detail, cached, baseline, mutations, cleared;
+const env = { SANDBOX_REAPER_MODE: 'delete', DAYTONA_API_KEY: 'synthetic',
+  DAYTONA_DEPLOYMENT_LABEL: ownerLabel,
+  DB: {
+    prepare(sql) {
+      if (sql.startsWith('SELECT daytona_sandbox_id')) return { all: async () => ({ results: cached }) };
+      return { bind(...values) {
+        const value = values.at(-1);
+        assert.equal(value, id);
+        return { first: async () => baseline, run: async () => ({}), sql, value };
+      } };
+    },
+    batch: async statements => {
+      assert.match(statements[0].sql, /^UPDATE user_keys/);
+      assert.match(statements[1].sql, /^DELETE FROM sandbox_import_activity/);
+      cleared++;
+    },
+  } };
+const enabled = { ...env, DAYTONA_V2_REAPER_DELETE: 'true' };
+function reset() {
+  pages = [{ sandboxes: [{ id }], next_cursor: null }];
+  detail = () => fixture;
+  cached = [];
+  baseline = { source_activity_ms: cutoff, baseline_activity_ms: now - 1000 };
+  mutations = 0;
+  cleared = 0;
 }
-const mutations = () => calls.filter(c => c.method === 'DELETE');
+
 try {
   assert.equal(SANDBOX_REAPER_CRON, '17 8 * * *');
-  const config = readFileSync('wrangler.jsonc', 'utf8');
-  assert.ok(config.includes('"0 * * * *", "17 8 * * *"'));
-  const entry = readFileSync('src/index.ts', 'utf8');
-  assert.ok(entry.includes('event.cron === SANDBOX_REAPER_CRON'));
-
-  setup([machine('archived'), machine('stopped', { state: 'stopped', desiredState: 'stopped' })]);
-  inventory = [{ items: [machine('archived')], nextCursor: '1' },
-    { items: [machine('stopped', { state: 'stopped', desiredState: 'stopped' })], nextCursor: null }];
-  let report = await reapInactiveSandboxes(env, now);
-  assert.equal(report.deleted, 2); assert.deepEqual(cleared, ['archived', 'stopped']);
-  assert.equal(calls[1].search, '?cursor=1');
-  assert.equal(calls.filter(c => c.method === 'GET' && c.path.endsWith('/archived')).length, 2);
-
-  // The synthetic owner survives indefinitely without touching compute/activity.
-  // Near-matches and unrelated labels must not exempt ordinary owners.
-  for (const mode of ['delete', 'dry-run']) {
-    setup([machine('probe', {
-      labels: { 'chat.bayleaf.dev': 'probe@bayleaf.dev' },
-      lastActivityAt: '2020-01-01T00:00:00Z',
-    }), machine('ordinary', { labels: {
-      'chat.bayleaf.dev': 'synthetic@ucsc.edu', 'retention-exempt': 'true',
-      'other-deployment': 'probe@bayleaf.dev',
-    } }), machine('near-match', { labels: { 'chat.bayleaf.dev': 'probe+test@bayleaf.dev' } })]);
-    report = await reapInactiveSandboxes({ ...env, SANDBOX_REAPER_MODE: mode }, now);
-    assert.equal(report.scanned, 3); assert.equal(report.skipped, 1);
-    assert.equal(report.candidates, 2);
-    assert.equal(calls.some(c => c.path.endsWith('/probe')), false);
-    assert.deepEqual(cleared, mode === 'delete' ? ['ordinary', 'near-match'] : []);
-    assert.deepEqual(mutations().map(c => c.path), mode === 'delete'
-      ? ['/api/sandbox/ordinary', '/api/sandbox/near-match'] : []);
-  }
-  // Recheck the exemption on the fresh pre-delete read too.
-  setup([machine('old')]);
-  details.set('old', machine('old', { labels: { 'chat.bayleaf.dev': 'probe@bayleaf.dev' } }));
-  report = await reapInactiveSandboxes(env, now);
-  assert.equal(report.skipped, 1); assert.equal(mutations().length, 0);
-  assert.equal(cleared.length, 0);
-
-  setup([machine('old')]);
-  report = await reapInactiveSandboxes({ ...env, SANDBOX_REAPER_MODE: 'dry-run' }, now);
-  assert.equal(report.candidates, 1); assert.equal(mutations().length, 0); assert.equal(cleared.length, 0);
-  setup([machine('old')]);
-  await reapInactiveSandboxes({ ...env, SANDBOX_REAPER_MODE: undefined }, now);
-  assert.equal(calls.length, 0);
-
-  setup([machine('recent', { lastActivityAt: new Date(cutoff + 1).toISOString() }),
-    machine('personal', { labels: { 'chat.adamsmith.as': 'synthetic' } }),
-    machine('missing', { lastActivityAt: undefined }), machine('invalid', { lastActivityAt: 'bad' }),
-    machine('running', { state: 'started', desiredState: 'started' }),
-    machine('transitioning', { desiredState: 'started' })]);
-  report = await reapInactiveSandboxes(env, now);
-  assert.equal(report.candidates, 0); assert.equal(mutations().length, 0);
-
-  for (const change of [{ lastActivityAt: new Date(now).toISOString() },
-    { state: 'started', desiredState: 'started' }, { labels: { 'chat.bayleaf.dev': 'other' } },
-    { id: 'different' }]) {
-    setup([machine('old')]); details.set('old', machine('old', change));
-    await reapInactiveSandboxes(env, now); assert.equal(mutations().length, 0);
-  }
-  for (const status of [404, 500]) {
-    setup([machine('old')]); details.set('old', status);
-    await reapInactiveSandboxes(env, now); assert.equal(mutations().length, 0);
-  }
-  setup([machine('old')]); deletionStatus = 500;
-  report = await reapInactiveSandboxes(env, now);
-  assert.equal(report.failed, 1); assert.equal(cleared.length, 0);
-  setup([machine('old')]); verification = machine('old', { state: 'destroying' });
-  report = await reapInactiveSandboxes(env, now);
-  assert.equal(report.pending, 1); assert.equal(cleared.length, 0);
-  setup([machine('old')]); verification = machine('old', { state: 'destroyed' });
-  report = await reapInactiveSandboxes(env, now); assert.equal(report.deleted, 1);
-
-  setup([machine('old')]);
-  inventory = [{ items: [machine('old')], nextCursor: '1' }, { items: [], nextCursor: '1' }];
-  await assert.rejects(reapInactiveSandboxes(env, now), /pagination invalid/);
-  assert.equal(mutations().length, 0);
-  setup([machine('old')]); inventory = [{ items: [machine('old')], nextCursor: '1' }, {}];
-  await assert.rejects(reapInactiveSandboxes(env, now), /inventory invalid/);
-  assert.equal(mutations().length, 0);
-
-  // Import writes a new provider clock. Preserve the v0 activity until a
-  // v2 observation advances beyond the cutover baseline.
-  const v2id = 'sbx_imported';
-  const v2machine = { id: v2id, status: 'paused', labels: { 'chat.bayleaf.dev': 'synthetic@ucsc.edu' },
-    lifecycle_policy: { last_activity_at: new Date(now - 1000).toISOString() } };
-  let deleted = false, clearCount = 0, cachedIds = [];
-  const v2Env = { ...env, DAYTONA_API_VERSION: '2',
-    DB: {
-      prepare(sql) {
-        return { bind: () => ({
-          first: async () => ({ source_activity_ms: cutoff, baseline_activity_ms: now - 1000 }),
-          run: async () => ({}),
-        }), all: async () => ({ results: cachedIds.map(id => ({ id })) }) };
-      },
-      batch: async statements => { assert.equal(statements.length, 2); clearCount++; },
-    } };
+  assert.ok(readFileSync('wrangler.jsonc', 'utf8').includes('"0 * * * *", "17 8 * * *"'));
+  assert.ok(readFileSync('src/index.ts', 'utf8').includes('event.cron === SANDBOX_REAPER_CRON'));
   globalThis.fetch = async (url, options) => {
     const u = new URL(url);
     assert.equal(u.host, 'api.daytona.com');
-    if (u.pathname === '/sandboxes/search') return Response.json({ sandboxes: [{ id: v2id }], next_cursor: null });
-    assert.equal(u.pathname, `/sandboxes/${v2id}`);
+    assert.equal(new Headers(options.headers).get('authorization'), 'Bearer synthetic');
+    assert.equal(options.redirect, 'manual');
+    if (u.pathname === '/sandboxes/search') return Response.json(pages[u.searchParams.has('cursor') ? 1 : 0]);
+    assert.equal(u.pathname, `/sandboxes/${id}`);
     if (options.method === 'DELETE') {
-      deleted = true;
+      mutations++;
       return new Response(null, { status: 202 });
     }
-    return deleted ? new Response(null, { status: 404 }) : Response.json(v2machine);
+    const body = detail();
+    return body === null ? new Response(null, { status: 404 }) : Response.json(body);
   };
-  report = await reapInactiveSandboxes(v2Env, now);
-  assert.equal(report.candidates, 1); assert.equal(report.dryRun, true); assert.equal(deleted, false);
-  v2machine.lifecycle_policy.last_activity_at = new Date(now).toISOString();
-  report = await reapInactiveSandboxes(v2Env, now);
-  assert.equal(report.candidates, 0);
-  v2machine.lifecycle_policy.last_activity_at = new Date(now - 1000).toISOString();
-  report = await reapInactiveSandboxes({ ...v2Env, DAYTONA_V2_REAPER_DELETE: 'true' }, now);
-  assert.equal(report.deleted, 1); assert.equal(clearCount, 1);
-  // The search index may still show a sandbox after DELETE was accepted.
-  // Its authoritative deleting state is pending; 404 clears the exact binding
-  // even if search still advertises the deleted ID.
-  cachedIds = [v2id]; deleted = false; v2machine.status = 'deleting';
-  report = await reapInactiveSandboxes({ ...v2Env, DAYTONA_V2_REAPER_DELETE: 'true' }, now);
-  assert.equal(report.pending, 1); assert.equal(clearCount, 1);
-  deleted = true;
-  report = await reapInactiveSandboxes({ ...v2Env, DAYTONA_V2_REAPER_DELETE: 'true' }, now);
-  assert.equal(report.pending, 0); assert.equal(clearCount, 2);
+  reset();
+  pages[0].next_cursor = 'next';
+  pages.push({ sandboxes: [], next_cursor: null });
+  let report = await reapInactiveSandboxes(env, now);
+  assert.equal(report.candidates, 1);
+  assert.equal(report.dryRun, true);
+  assert.equal(mutations, 0);
+
+  detail = () => ({ ...fixture, lifecycle_policy: { last_activity_at: new Date(now).toISOString() } });
+  assert.equal((await reapInactiveSandboxes(enabled, now)).candidates, 0);
+  detail = () => ({ ...fixture, labels: { [ownerLabel]: 'probe@bayleaf.dev' } });
+  assert.equal((await reapInactiveSandboxes(enabled, now)).candidates, 0);
+  assert.equal(mutations, 0);
+
+  reset();
+  detail = () => mutations ? null : fixture;
+  report = await reapInactiveSandboxes(enabled, now);
+  assert.equal(report.deleted, 1);
+  assert.equal(cleared, 1);
+
+  // An accepted asynchronous delete may remain search-listed.
+  reset();
+  cached = [{ id }];
+  detail = () => ({ ...fixture, status: 'deleting' });
+  report = await reapInactiveSandboxes(enabled, now);
+  assert.equal(report.pending, 1);
+  assert.equal(cleared, 0);
+  detail = () => null;
+  report = await reapInactiveSandboxes(enabled, now);
+  assert.equal(report.pending, 0);
+  assert.equal(cleared, 1);
+
+  reset();
+  pages[0].next_cursor = 'repeated';
+  pages.push({ sandboxes: [], next_cursor: 'repeated' });
+  await assert.rejects(reapInactiveSandboxes(enabled, now));
+  assert.equal(mutations, 0);
   console.log('Sandbox reaper checks passed');
 } finally { globalThis.fetch = originalFetch; }

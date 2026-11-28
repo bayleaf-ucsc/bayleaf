@@ -1,7 +1,7 @@
 # Sandbox-specific API credentials
 
-Issue [#90](https://github.com/bayleaf-ucsc/bayleaf/issues/90). **Local implementation;
-not deployed or Daytona-qualified.** Migration `0015` is required.
+Issue [#90](https://github.com/bayleaf-ucsc/bayleaf/issues/90). Deployed on
+Daytona v2. Migration `0015` defines the credential records.
 
 ## Authority and custody
 
@@ -15,7 +15,7 @@ existing model/path/expiry and ordinary-key-revocation rules.
 The owner controller issues a random 256-bit `sk-bayleaf-sandbox-…` bearer for one
 owner email and exact sandbox ID. It has no automatic expiry. D1 stores only its
 SHA-256 verifier and lifecycle metadata. Daytona Secrets holds the bearer, always
-with `hosts: ["api.bayleaf.dev"]`. The guest receives `dtn_secret_…`, transmitted
+with `allowed_domains: ["api.bayleaf.dev"]`. The guest receives `dtns_…`, transmitted
 literally in HTTPS Authorization headers. No provider key is minted at issuance.
 
 Authentication checks the active verifier, current owner-to-machine binding and
@@ -71,12 +71,10 @@ D1 backups remain subject to the platform's backup-retention policy.
 
 ## Existing machines and rollout
 
-Adam reports existing machines are stopped/archived and can remain quiet for rollout.
-Attach before their next wake. First attachment to an existing running machine is
-refused; its owner must save work and allow the machine to stop. A new, empty managed
-machine gets one stop/start for first attachment. A previously mounted placeholder
-allows reauthorization without an extra whole-machine restart. Unknown additional
-secret mounts stop setup rather than replacing unrelated mounts.
+The controller uses Daytona's revision-guarded secret mount update and waits
+for the change to apply before setup. It preserves unrelated secret mounts.
+An imported guest can retain the old proxy environment and protected CA
+directory; managed setup repairs its own process environment without disabling TLS.
 
 Managed installers replace their `credentials/incoming` / `credentials/owner-key`
 with a placeholder. OpenCode bootstrap removes only older credential entries labeled
@@ -89,7 +87,7 @@ an existing disk or process environment. Do not describe an existing machine as
 fully migrated until those owned copies have been checked. Backups/history may
 retain previously copied keys; revoking the ordinary key invalidates such copies.
 
-Before production enablement:
+Original rollout checklist (historical):
 
 1. Review and publish the edited OpenCode client package, then rebuild its verified pin.
    Test fixtures deliberately do not qualify Git publication or package loading.
