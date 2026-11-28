@@ -188,6 +188,17 @@ first cycle. The source fixture was verified deleted; no v2 import was
 attempted. The successful single-cycle canary imports still establish that
 archived files can carry over. They do not resolve the production timestamp
 gap or justify bypassing the freshness guard.
+Daytona's [historical v0 archive implementation](https://github.com/daytonaio/daytona/blob/v0.190.0/apps/api/src/sandbox/managers/sandbox-actions/sandbox-archive.action.ts#L88-L146)
+can reuse a completed backup before destroying the runner copy, and
+[state changes advance activity](https://github.com/daytonaio/daytona/blob/v0.190.0/apps/api/src/sandbox/repositories/sandbox.repository.ts#L96-L122).
+That explains how an intact archive could show this timestamp ordering. The
+tag does not identify the deployed hosted implementation or attest any of
+the 24 backups. The documented migration API does not expose a backup digest
+or backup selection. Resolve this with Daytona evidence for the exact
+archives, or agree on a maintenance procedure that compares each restored
+source with its v2 copy before rebinding. A comparison can establish what
+both systems restore for the agreed paths; it cannot recover a write missing
+from the original archive.
 The synthetic import of that image retained the `daytona` home, writable
 workspace, Node 24/npm, Python 3.14, Chromium, sudo, and websockify. It had
 noVNC under `/usr/share/novnc`, which the managed Desktop launcher accepts.
