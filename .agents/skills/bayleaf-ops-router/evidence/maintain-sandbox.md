@@ -3,6 +3,12 @@
 Dated record of past runs of [`maintain-sandbox.md`](../playbooks/maintain-sandbox.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-27 (#172): Applied D1 migration `0024`; deployed the API
+  (`6ed07a91`) and Sandboxes (`3c931faf`) with Daytona v0 still selected.
+  Public pages and an authenticated passive status read passed. The isolated
+  v2 launcher also passed with the new scoped API key. No production
+  workspace was imported or rebound.
+
 - 2026-11-27 (#172): With approval, published dual Daytona placeholder
   support as sandbox-plugin `18b5ac9`. All 37 plugin tests passed and the
   parent Worker pin was rebuilt. The published Git pin passed the real

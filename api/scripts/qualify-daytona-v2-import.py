@@ -90,7 +90,10 @@ def qualify(key, *, double_cycle=False, compare_restored_source=False):
                 code = json.load(error).get("code") or ""
             except (ValueError, AttributeError):
                 pass
-            raise RuntimeError(f"{method} failed: HTTP {error.code} {code}") from None
+            endpoint = urllib.parse.urlsplit(url)
+            raise RuntimeError(
+                f"{method} {endpoint.hostname}{endpoint.path} failed: HTTP {error.code} {code}"
+            ) from None
         if binary:
             return content
         return json.loads(content) if content else {}
