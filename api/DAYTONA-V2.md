@@ -93,6 +93,23 @@ The v2 integration is staged in the checkout. Deployed behavior is documented in
   v0 mutations have been quiesced, `--prepare --state-dir <new-private-dir>`
   starts or reuses imports and applies lifecycle settings. Inspect the
   private warnings and verify each imported cohort's filesystem and launcher.
+  If the strict timestamp check refuses an archive, `--prepare
+  --archive-equivalence` can stage copies without generating SQL. Then run
+  `--compare-archives` against the same state directory under the same
+  maintenance hold. It pins the archive lineage, computes matching digests
+  in both guests, stops the restored v0 source, pauses the v2 copy, and writes
+  a private receipt per owner. The digest covers `/home/daytona`, including
+  relative paths, modes, numeric ownership, file bytes and symlink targets.
+  Linux mount metadata detects and rejects nested mounts. Unix sockets are
+  omitted because they are process endpoints and carry no saved file content.
+  The v0 provider's `.daytona/sessions/entrypoint` tree is omitted only if
+  it contains the observed runtime layout: `entrypoint_command` with
+  `cmd.sh`, `output.log`, and the three input/output FIFOs. Any other file
+  or type in that tree blocks comparison. Entrypoint commands and stdout
+  logs are outside the equivalence claim.
+  The digest cannot certify files elsewhere, mounted volumes, live processes,
+  or a write absent from both restores. If a comparison fails after restoring v0, keep D1 on
+  v0 and retain both copies and the journal for reconciliation.
   Put the destinations back to sleep, then use `--finalize --state-dir
   <private-dir>` to capture their final activity clocks and generate the
   guarded handoff. These commands never write D1 or delete sources. Keep
@@ -111,6 +128,14 @@ The v2 integration is staged in the checkout. Deployed behavior is documented in
   retire live connections/direct links, and verify v0 machines remain
   archived before copying. The passive sandbox probe also sees 503 during
   this maintenance window. Leave inference and unrelated BayLeaf facets live.
+- Confirm the frozen Worker is serving 100% of traffic before changing any
+  D1 binding. Keep the freeze in effect across version changes and use the
+  checked-in `DAYTONA_API_VERSION` for the final release: a later unqualified
+  deploy from v0 configuration could revive the source and split user writes.
+  Reopen only after the Worker version, verified D1 bindings and inactive
+  Chat configuration agree. Before a pre-write rollback, freeze again and
+  verify propagation, restore the v0 bindings and Chat configuration, and
+  reopen only with the Worker back on v0.
 - Back up Chat using `python3 chat/scripts/lathe-rollout.py backup
   --snapshot-dir <private-dir>`. With `LATHE_DAYTONA_V2_KEY` loaded, run
   `preflight` against the same directory before pausing. If the operator

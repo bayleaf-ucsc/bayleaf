@@ -3,6 +3,10 @@
 Dated record of past runs of [`maintain-sandbox.md`](../playbooks/maintain-sandbox.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-27 (#172): The disposable archive's restored v0 and imported v2
+  home digests matched. A one-byte edit to a synthetic home dotfile was
+  detected; the stopped v0 copy retained its exact import pointer.
+
 - 2026-11-27 (#172): Accepted the operator-approved v0 sync setting on the
   separate read/write Chat key. The live preflight passed; Daytona returned
   403 when that key tried to delete an isolated v2 fixture. The Worker key

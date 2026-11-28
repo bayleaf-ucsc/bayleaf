@@ -6,14 +6,18 @@ an existing workspace ID. It deletes only resources with its random owner label.
 """
 
 import argparse
+import base64
 from datetime import datetime
 import json
 import os
+import shlex
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+
+from daytona_workspace_compare import toolbox_digest
 
 V0 = "https://app.daytona.io/api/sandbox"
 V2 = "https://api.daytona.com/sandboxes"
@@ -47,6 +51,37 @@ if ! test -f /opt/novnc/vnc.html; then
 fi
 test -r /opt/novnc/vnc.html
 """
+FIXTURE_TOPOLOGY = """\
+import collections, hashlib, json, os, pathlib, stat
+root = pathlib.Path('/home/daytona')
+root_dev = root.stat().st_dev
+special = []
+entries = {}
+device_differences = collections.Counter()
+for parent, directories, files in os.walk(root):
+    for name in directories + files:
+        path = pathlib.Path(parent, name)
+        info = path.lstat()
+        mode = info.st_mode
+        kind = ('symlink' if stat.S_ISLNK(mode) else 'file' if stat.S_ISREG(mode)
+                else 'dir' if stat.S_ISDIR(mode) else 'special')
+        relative = str(path.relative_to(root))
+        entry = [kind, mode, info.st_uid, info.st_gid]
+        if kind == 'file':
+            with path.open('rb') as data:
+                entry.append(hashlib.file_digest(data, 'sha256').hexdigest())
+        elif kind == 'symlink':
+            entry.append(os.readlink(path))
+        entries[relative] = entry
+        if kind == 'special' and len(special) < 20:
+            special.append([relative, stat.filemode(mode)])
+        if info.st_dev != root_dev:
+            device_differences[kind] += 1
+mounts = [line.split()[4] for line in pathlib.Path('/proc/self/mountinfo').read_text().splitlines()]
+print(json.dumps({'special': special, 'different_device': dict(device_differences),
+                  'entries': entries,
+                  'mounts': [path for path in mounts if path.startswith(str(root) + '/')]}))
+"""
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -58,7 +93,7 @@ class TransientReadError(RuntimeError):
     pass
 
 
-def qualify(key, *, double_cycle=False, compare_restored_source=False):
+def qualify(key, *, double_cycle=False, compare_restored_source=False, compare_workspace=False):
     label = f"bayleaf-172-import-{uuid.uuid4().hex[:12]}"
     labels = {label: OWNER}
     source = None
@@ -66,7 +101,7 @@ def qualify(key, *, double_cycle=False, compare_restored_source=False):
     import_attempted = False
     opener = urllib.request.build_opener(NoRedirect())
 
-    def request(url, method="GET", body=None, *, missing_ok=False, binary=False):
+    def request(url, method="GET", body=None, *, missing_ok=False, binary=False, timeout=35):
         req = urllib.request.Request(
             url,
             data=json.dumps(body).encode() if body is not None else None,
@@ -78,7 +113,7 @@ def qualify(key, *, double_cycle=False, compare_restored_source=False):
             },
         )
         try:
-            with opener.open(req, timeout=35) as response:
+            with opener.open(req, timeout=timeout) as response:
                 content = response.read()
         except urllib.error.HTTPError as error:
             if missing_ok and error.code == 404:
@@ -195,8 +230,13 @@ def qualify(key, *, double_cycle=False, compare_restored_source=False):
             machine = wait_for(lambda: state(src_url, "state", {"started"}), "v0 start")
             if not machine.get("toolboxProxyUrl"):
                 machine["toolboxProxyUrl"] = "https://proxy.app.daytona.io/toolbox"
+            seed = f"mkdir -p /home/daytona/workspace && printf {marker} > {CANARY_PATH}"
+            if compare_workspace:
+                seed += (f" && mkdir -p /home/daytona/bayleaf-apps/fixture"
+                         f" && printf {marker} > /home/daytona/bayleaf-apps/fixture/canary"
+                         f" && printf {marker} > /home/daytona/.bayleaf-import-fixture")
             result = request(toolbox(machine, "toolboxProxyUrl", ".daytona.io") + "/process/execute", "POST", {
-                "command": f"bash -c 'mkdir -p /home/daytona/workspace && printf {marker} > {CANARY_PATH}'",
+                "command": f"bash -c '{seed}'",
                 "timeout": 5000,
             })
             if result["exitCode"] != 0:
@@ -211,6 +251,8 @@ def qualify(key, *, double_cycle=False, compare_restored_source=False):
         import_attempted = True
         imported = request(f"{MIGRATION}/{source}/import", "POST", {"force": False})
         destination = imported["sandbox_id"]
+        if imported.get("existing") is not False or imported.get("v0_labeled") is not True:
+            raise RuntimeError("Expected a fresh import with a confirmed source label")
         print("Imported v2 fixture; warnings:", len(imported.get("warnings") or []), flush=True)
         dest_url = f"{V2}/{destination}"
         machine = wait_for(lambda: state(dest_url, "status", {"running", "stopped", "paused"}), "v2 import")
@@ -232,7 +274,7 @@ def qualify(key, *, double_cycle=False, compare_restored_source=False):
         if actual != marker.encode():
             raise RuntimeError("Imported canary did not match")
         print("Verified imported filesystem, exact owner label, and one-hour pause policy", flush=True)
-        if compare_restored_source:
+        if compare_restored_source or compare_workspace:
             # Restore only after the importer has consumed the archived source.
             # This establishes what reopening v0 would return from that archive.
             source_record = request(src_url)
@@ -249,6 +291,56 @@ def qualify(key, *, double_cycle=False, compare_restored_source=False):
             if restored != actual:
                 raise RuntimeError("The restored v0 and imported v2 canaries differed")
             print("Verified the restored v0 archive and imported v2 copy serve the same final canary", flush=True)
+            if compare_workspace:
+                home = "/home/daytona"
+                # Fixture-only topology: these paths belong to a brand-new
+                # synthetic guest. Production digests never return pathnames.
+                probe = base64.b64encode(FIXTURE_TOPOLOGY.encode()).decode()
+                args = ["python3", "-I", "-S", "-c", f'import base64; exec(base64.b64decode("{probe}"))']
+                legacy_topology = request(f"{restored_toolbox}/process/execute", "POST", {
+                    "command": shlex.join(args), "timeout": 5000,
+                })
+                old_entries = {}
+                if legacy_topology.get("exitCode") == 0:
+                    summary = json.loads(legacy_topology["result"])
+                    old_entries = summary.pop("entries")
+                    print("Synthetic v0 home topology:", summary, flush=True)
+                topology = request(f"{url}/processes?waitMs=6000&logs=text", "POST", {
+                    "argv": args,
+                    "timeoutMs": 5000,
+                })
+                new_entries = {}
+                if topology.get("exitCode") == 0:
+                    frames = topology["logs"]["frames"]
+                    output = "".join(frame["data"] for frame in frames if frame.get("channel") == "stdout")
+                    summary = json.loads(output)
+                    new_entries = summary.pop("entries")
+                    print("Synthetic v2 home topology:", summary, flush=True)
+                original = toolbox_digest(request, restored_toolbox, legacy=True, root=home)
+                if original != toolbox_digest(request, url, legacy=False, root=home):
+                    if old_entries and new_entries:
+                        print("Different synthetic home entries:", [
+                            name for name in sorted(old_entries.keys() | new_entries.keys())
+                            if old_entries.get(name) != new_entries.get(name)
+                        ][:30], flush=True)
+                    raise RuntimeError("Restored v0 and imported v2 home digests differed")
+                print("Verified matching complete home tree digests", flush=True)
+                changed = request(f"{url}/processes?waitMs=6000&logs=text", "POST", {
+                    "argv": ["python3", "-I", "-S", "-c",
+                             "from pathlib import Path; p = Path('/home/daytona/.bayleaf-import-fixture'); "
+                             "data = p.read_bytes(); p.write_bytes(bytes([data[0] ^ 1]) + data[1:])"],
+                    "timeoutMs": 5000,
+                })
+                if changed.get("exitCode") != 0 or original == toolbox_digest(request, url, legacy=False, root=home):
+                    raise RuntimeError("Home digest did not detect a one-byte fixture change")
+                print("Verified a one-byte change outside workspace invalidates the home digest", flush=True)
+                request(src_url + "/stop", "POST")
+                stopped = wait_for(lambda: state(src_url, "state", {"stopped"}), "restored v0 rollback copy stop")
+                migration = migration_source()
+                if (stopped.get("labels", {}).get("daytona.io/migrated-to") != destination
+                        or not migration or migration.get("imported_sandbox_id") != destination):
+                    raise RuntimeError("Stopped rollback copy did not retain its exact import pointer")
+                print("Verified stopped v0 rollback copy retains its import pointer", flush=True)
         runtime = request(f"{url}/processes?waitMs=8000&logs=text", "POST", {
             "argv": ["python3", "-c", PROBE_RUNTIME], "timeoutMs": 7000,
         })
@@ -279,6 +371,8 @@ def main():
     parser.add_argument("--double-cycle", action="store_true", help="Prove the importer selects the second of two archives")
     parser.add_argument("--compare-restored-source", action="store_true",
         help="After import, restore the original fixture and compare its canary with the v2 copy")
+    parser.add_argument("--compare-workspace", action="store_true",
+        help="Compare the complete workspace tree after import and verify the stopped rollback copy")
     args = parser.parse_args()
     if not args.live:
         parser.error("--live is required to create and delete disposable resources")
@@ -286,7 +380,8 @@ def main():
     if not key:
         parser.error("DAYTONA_API_KEY is required")
     try:
-        qualify(key, double_cycle=args.double_cycle, compare_restored_source=args.compare_restored_source)
+        qualify(key, double_cycle=args.double_cycle, compare_restored_source=args.compare_restored_source,
+                compare_workspace=args.compare_workspace)
     except (RuntimeError, OSError) as error:
         parser.exit(1, f"Fixture qualification failed: {error}\n")
 

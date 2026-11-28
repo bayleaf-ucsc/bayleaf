@@ -7,10 +7,11 @@ import json
 from pathlib import Path
 import runpy
 import sqlite3
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SCRIPT = Path(__file__).with_name("prepare-daytona-v2-cutover.py")
 cutover = SimpleNamespace(**runpy.run_path(str(SCRIPT)))
@@ -21,6 +22,8 @@ ACTIVITY = "2026-11-25T12:00:00.123456789Z"
 BACKUP = "2026-11-25T12:00:01Z"
 IMPORTED = "2026-11-27T09:00:00.001Z"
 INSPECTED = "2026-11-27T09:45:00.789123456Z"
+STALE_BACKUP = "2026-11-25T12:00:00.123456788Z"
+RESTORED = "2026-11-27T09:40:00.333123456Z"
 
 
 class DaytonaFixture:
@@ -77,10 +80,33 @@ class PreparationTests(unittest.TestCase):
         }))
         self.enterContext(contextlib.redirect_stdout(io.StringIO()))
 
-    def run_stage(self, stage):
-        cutover.run(SimpleNamespace(prepare=stage == "prepare", finalize=stage == "finalize",
+    def run_stage(self, stage, *, archive_equivalence=False):
+        cutover.run(SimpleNamespace(prepare=stage == "prepare", compare_archives=stage == "compare",
+                                    finalize=stage == "finalize", archive_equivalence=archive_equivalence,
                                     state_dir=self.directory,
                                     qualified_region=[cutover.DEFAULT_QUALIFIED_REGION]), self.fixture)
+
+    def stage_comparison(self, *, state="stopped", backup=STALE_BACKUP):
+        self.fixture.entry["last_backup_at"] = STALE_BACKUP
+        self.fixture.target["status"] = "paused"
+        self.run_stage("prepare", archive_equivalence=True)
+        ledger = json.loads((self.directory / "state.json").read_text())
+        self.fixture.source.update(state=state, lastActivityAt=RESTORED)
+        self.fixture.entry.update(importable=state == "archived", last_backup_at=backup)
+        self.fixture.target["lifecycle_policy"]["last_activity_at"] = INSPECTED
+        return {OWNER: {
+            "source": ledger["source"][OWNER],
+            "v2_id": DEST,
+            "manifest_version": "sha256-tree-v2:/home/daytona",
+            "observed_v2_activity": INSPECTED,
+            "manifest_sha256": "a" * 64,
+            "observed_v0": {"state": state, "source_activity": RESTORED, "last_backup_at": backup},
+        }}
+
+    def write_equivalence(self, receipts):
+        path = self.directory / "archive-equivalence.json"
+        path.write_text(json.dumps(receipts))
+        path.chmod(0o600)
 
     def test_pagination_requires_terminal_cursor(self):
         pages = iter([{"sandboxes": [], "next_cursor": "part 2"},
@@ -100,10 +126,128 @@ class PreparationTests(unittest.TestCase):
                 list(cutover.inventory(lambda _: page, cutover.V2, "sandboxes", "next_cursor"))
 
     def test_stale_backup_at_sub_millisecond_precision(self):
-        self.fixture.entry["last_backup_at"] = "2026-11-25T12:00:00.123456788Z"
-        with self.assertRaisesRegex(RuntimeError, "backup predates"):
-            self.run_stage("prepare")
+        self.fixture.entry["last_backup_at"] = STALE_BACKUP
+        for stage in ("audit", "prepare"):
+            with self.subTest(stage=stage), self.assertRaisesRegex(RuntimeError, "backup predates"):
+                self.run_stage(stage)
         self.assertEqual(self.fixture.mutations, [])
+
+    def test_provider_supports_empty_write_response_and_custom_timeout(self):
+        with patch.object(cutover.urllib.request, "build_opener") as build:
+            opener = build.return_value
+            reply = opener.open.return_value.__enter__.return_value
+            reply.read.side_effect = [b"", b'{"state":"stopped"}']
+            provider = cutover.provider_client("synthetic")
+            self.assertEqual(provider(f"{cutover.V0}/{SOURCE}/stop", "POST", timeout=75), {})
+            self.assertEqual(opener.open.call_args.kwargs["timeout"], 75)
+            self.assertEqual(provider(f"{cutover.V0}/{SOURCE}"), {"state": "stopped"})
+            self.assertEqual(opener.open.call_args.kwargs["timeout"], 45)
+
+    def test_compare_archives_checks_bindings_then_delegates_with_nonarchived_source(self):
+        self.stage_comparison()
+        ledger = json.loads((self.directory / "state.json").read_text())
+        binding_rows = [{"email": OWNER, "daytona_sandbox_id": SOURCE, "managed": 0}]
+        compare = Mock()
+        self.enterContext(patch.dict(sys.modules, {"daytona_workspace_compare": SimpleNamespace(compare_archives=compare)}))
+        self.enterContext(patch.dict(cutover.run.__globals__, {"d1_bindings": lambda: binding_rows}))
+        with self.assertRaisesRegex(RuntimeError, "Managed credential inventory changed"):
+            self.run_stage("compare")
+        compare.assert_not_called()
+        binding_rows[0]["managed"] = 1
+        self.run_stage("compare")
+        compare.assert_called_once_with(self.fixture, self.directory.resolve(), ledger, [cutover.DEFAULT_QUALIFIED_REGION])
+        self.assertFalse((self.directory / "handoff").exists())
+
+    def test_compare_archives_refuses_strict_preparation(self):
+        self.run_stage("prepare")
+        with self.assertRaisesRegex(RuntimeError, "completed provisional preparation"):
+            self.run_stage("compare")
+
+    def test_archive_comparison_preserves_original_activity_and_accepts_stopped_source(self):
+        receipts = self.stage_comparison(backup=None)
+        with self.assertRaisesRegex(RuntimeError, "require archive-equivalence.json"):
+            self.run_stage("finalize")
+        self.assertFalse((self.directory / "handoff").exists())
+
+        self.write_equivalence(receipts)
+        self.run_stage("finalize")
+        mapping = json.loads((self.directory / "handoff/mapping.json").read_text())[0]
+        self.assertEqual(mapping["source_activity"], ACTIVITY)
+        self.assertEqual(mapping["source_activity_ms"], cutover.nanoseconds(ACTIVITY) // 10**6)
+        self.assertEqual(mapping["last_backup_at"], STALE_BACKUP)
+        self.assertEqual(mapping["archive_equivalence"]["observed_v0"], receipts[OWNER]["observed_v0"])
+        self.assertEqual(mapping["baseline_activity"], INSPECTED)
+        self.assertEqual([m[0] for m in self.fixture.mutations], ["POST", "PATCH"])
+
+    def test_archive_comparison_accepts_archived_source_with_exact_original_backup(self):
+        self.write_equivalence(self.stage_comparison(state="archived"))
+        self.run_stage("finalize")
+
+    def test_stopped_source_backup_metadata_does_not_replace_import_lineage(self):
+        self.write_equivalence(self.stage_comparison(backup=RESTORED))
+        self.run_stage("finalize")
+        mapping = json.loads((self.directory / "handoff/mapping.json").read_text())[0]
+        self.assertEqual(mapping["last_backup_at"], STALE_BACKUP)
+        self.assertEqual(mapping["archive_equivalence"]["observed_v0"]["last_backup_at"], RESTORED)
+
+    def test_archive_comparison_rejects_changed_backup_even_if_receipt_reports_it(self):
+        self.write_equivalence(self.stage_comparison(state="archived", backup=RESTORED))
+        with self.assertRaisesRegex(RuntimeError, "pinned backup lineage"):
+            self.run_stage("finalize")
+        self.assertFalse((self.directory / "handoff").exists())
+
+    def test_archive_comparison_requires_exact_receipt(self):
+        receipts = self.stage_comparison()
+        receipt = receipts[OWNER]
+        for invalid in ({}, {**receipts, "other@ucsc.edu": receipt},
+                        {OWNER: {**receipt, "v2_id": "sbx_wrong"}},
+                        {OWNER: {**receipt, "manifest_sha256": "invalid"}},
+                        {OWNER: {**receipt, "source": {**receipt["source"], "source_activity": RESTORED}}}):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(RuntimeError, "Archive equivalence"):
+                self.write_equivalence(invalid)
+                self.run_stage("finalize")
+        self.assertFalse((self.directory / "handoff").exists())
+
+    def test_archive_comparison_requires_private_receipts_without_duplicate_owners(self):
+        receipts = self.stage_comparison()
+        self.write_equivalence(receipts)
+        path = self.directory / "archive-equivalence.json"
+        path.chmod(0o644)
+        with self.assertRaisesRegex(RuntimeError, "private operator-owned file"):
+            self.run_stage("finalize")
+        path.chmod(0o600)
+        entry = json.dumps(receipts)[1:-1]
+        path.write_text("{" + entry + "," + entry + "}")
+        with self.assertRaisesRegex(RuntimeError, "duplicate keys"):
+            self.run_stage("finalize")
+        self.assertFalse((self.directory / "handoff").exists())
+
+    def test_archive_comparison_rechecks_metadata_lineage_and_sleeps(self):
+        self.write_equivalence(self.stage_comparison())
+        for row, field, value in (
+            (self.fixture.source, "state", "started"),
+            (self.fixture.source, "lastActivityAt", INSPECTED),
+            (self.fixture.entry, "last_backup_at", RESTORED),
+            (self.fixture.entry, "imported_sandbox_id", "sbx_other"),
+            (self.fixture.source["labels"], cutover.MIGRATED_TO, "sbx_other"),
+            (self.fixture.target, "status", "running"),
+            (self.fixture.target["lifecycle_policy"], "last_activity_at", RESTORED),
+            (self.fixture.target["labels"], cutover.LABEL, "other@ucsc.edu"),
+        ):
+            original = row[field]
+            try:
+                row[field] = value
+                with self.subTest(field=field), self.assertRaises(RuntimeError):
+                    self.run_stage("finalize")
+            finally:
+                row[field] = original
+        self.assertFalse((self.directory / "handoff").exists())
+
+    def test_preparation_cannot_switch_equivalence_mode(self):
+        self.run_stage("prepare")
+        with self.assertRaisesRegex(RuntimeError, "same archive-equivalence mode"):
+            self.run_stage("prepare", archive_equivalence=True)
+        self.assertEqual([m[0] for m in self.fixture.mutations], ["POST"])
 
     def test_unproven_import_refused_without_mutation(self):
         self.fixture.entry["imported_sandbox_id"] = DEST

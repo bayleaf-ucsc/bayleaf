@@ -6,6 +6,12 @@ records their provenance; repeat with the same DIR until all are ready.
 Inspect the imported filesystems and launchers, then leave the destinations
 paused or stopped. --finalize --state-dir DIR captures the final activity
 baseline and generates D1 SQL. Keep both fleets closed to activity throughout.
+With --archive-equivalence, --prepare stages provisional imports and pins the
+original source clocks. Before --finalize, a separate comparator must verify
+each imported pair and atomically write private DIR/archive-equivalence.json.
+Run it with --compare-archives --state-dir DIR.
+The comparator must check the pinned archive and import before restoring v0,
+compare the two filesystems while user writes stay closed, and park both copies.
 This script never writes D1 or replaces an unproven import.
 """
 
@@ -18,6 +24,7 @@ import math
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import tempfile
 import urllib.error
@@ -51,15 +58,16 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def provider_client(key):
     opener = urllib.request.build_opener(NoRedirect())
 
-    def provider(url, method="GET", body=None):
+    def provider(url, method="GET", body=None, *, timeout=45):
         request = urllib.request.Request(
             url, method=method,
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             data=None if body is None else json.dumps(body).encode(),
         )
         try:
-            with opener.open(request, timeout=45) as reply:
-                return json.load(reply)
+            with opener.open(request, timeout=timeout) as reply:
+                content = reply.read()
+                return json.loads(content) if content else {}
         except urllib.error.HTTPError as error:
             raise RuntimeError(f"Daytona {method} failed: HTTP {error.code}") from None
 
@@ -131,13 +139,15 @@ def d1_bindings():
     return response[0]["results"]
 
 
-def fleet(provider):
+def fleet(provider, *, provisional=False, equivalence=None):
     sources = by_owner(inventory(provider, V0, "items", "nextCursor"), "id", UUID)
     imports = by_owner(inventory(provider, IMPORT, "sandboxes", "next_cursor"), "v0_id", UUID)
     search = inventory(provider, f"{V2}/search", "sandboxes", "next_cursor")
     targets = by_owner((m for m in search if m.get("status") != "deleted"), "id", V2_ID)
     if not sources or set(sources) != set(imports):
         raise RuntimeError("Daytona v0 and import inventories are empty or disagree")
+    if equivalence is not None and sources.keys() != equivalence.keys():
+        raise RuntimeError("Archive equivalence no longer covers the exact v0 fleet")
     pointers = {}
     for owner, entry in imports.items():
         dest = entry.get("imported_sandbox_id")
@@ -152,14 +162,20 @@ def fleet(provider):
     snapshot, labels = {}, {}
     for owner, source in sorted(sources.items()):
         entry = imports[owner]
-        if source["id"] != entry["v0_id"] or source.get("state") != "archived" or entry.get("importable") is not True:
-            raise RuntimeError("At least one owned workspace is not ready for import")
+        observed = None if equivalence is None else equivalence[owner]["observed_v0"]
+        state = "archived" if observed is None else observed["state"]
+        if (source["id"] != entry["v0_id"] or source.get("state") != state or
+                (state == "archived" and entry.get("importable") is not True)):
+            raise RuntimeError("At least one owned workspace is not in its required source state")
         activity = source.get("lastActivityAt")
         backup = entry.get("last_backup_at")
-        if nanoseconds(backup) < nanoseconds(activity):
+        if observed is not None:
+            if activity != observed["source_activity"] or backup != observed["last_backup_at"]:
+                raise RuntimeError("A source changed after archive equivalence was recorded")
+        elif nanoseconds(backup) < nanoseconds(activity) and not provisional:
             raise RuntimeError("A backup predates the recorded source activity; establish a fresh archive before importing")
         expected = {"v0_id": source["id"], "source_activity": activity, "last_backup_at": backup}
-        detail = source_detail(provider, owner, expected)
+        detail = source_detail(provider, owner, expected, state=state)
         snapshot[owner] = {**expected, "v0_resources": resources(detail, V0_RESOURCES)}
         labels[owner] = detail["labels"].get(MIGRATED_TO)
     return snapshot, pointers, targets, labels
@@ -172,10 +188,10 @@ def check_bindings(snapshot, rows):
     return sorted(row["email"] for row in rows if row["managed"])
 
 
-def source_detail(provider, owner, source):
+def source_detail(provider, owner, source, *, state="archived"):
     machine = provider(f"{V0}/{source['v0_id']}")
     labels = machine.get("labels") or {}
-    if (machine.get("id") != source["v0_id"] or machine.get("state") != "archived" or
+    if (machine.get("id") != source["v0_id"] or machine.get("state") != state or
             machine.get("lastActivityAt") != source["source_activity"] or labels.get(LABEL) != owner):
         raise RuntimeError("A source changed after inventory; keep writes closed and reconcile")
     if "v0_resources" in source and resources(machine, V0_RESOURCES) != source["v0_resources"]:
@@ -240,10 +256,19 @@ def policy_matches(policy):
     return isinstance(policy, dict) and all(policy.get(key) == value for key, value in POLICY.items())
 
 
-def correlated_fleet(provider, state):
-    snapshot, pointers, targets, labels = fleet(provider)
+def correlated_fleet(provider, state, equivalence=None):
+    provisional = state.get("archive_equivalence", False)
+    snapshot, pointers, targets, labels = fleet(provider, provisional=provisional, equivalence=equivalence)
     receipts = state["imports"]
-    if snapshot != state["source"] or pointers != {owner: m["v2_id"] for owner, m in receipts.items()} or set(targets) != set(snapshot):
+    expected = state["source"]
+    if equivalence is not None:
+        expected = {
+            owner: {**source,
+                    "source_activity": equivalence[owner]["observed_v0"]["source_activity"],
+                    "last_backup_at": equivalence[owner]["observed_v0"]["last_backup_at"]}
+            for owner, source in expected.items()
+        }
+    if snapshot != expected or pointers != {owner: m["v2_id"] for owner, m in receipts.items()} or set(targets) != set(snapshot):
         raise RuntimeError("Source backup or destination inventory changed; do not rebind")
     for owner in snapshot:
         if not receipts[owner]["v0_labeled"] or labels[owner] != pointers[owner]:
@@ -284,10 +309,55 @@ def prepare_imports(provider, directory, state, pointers, regions):
     print(f"{len(receipts)} imports are ready for inspection. No binding SQL has been generated.")
 
 
+def unique_json_object(pairs):
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise RuntimeError("Archive equivalence JSON contains duplicate keys")
+    return result
+
+
+def read_equivalence(directory, state):
+    """Read owner-keyed receipts with the pinned source row and reported comparison."""
+    path = directory / "archive-equivalence.json"
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        raise RuntimeError("Provisional imports require archive-equivalence.json before finalizing") from None
+    with os.fdopen(fd) as file:
+        info = os.fstat(file.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise RuntimeError("Archive equivalence receipts must be in a private operator-owned file")
+        receipts = json.load(file, object_pairs_hook=unique_json_object)
+    if not isinstance(receipts, dict) or receipts.keys() != state["source"].keys():
+        raise RuntimeError("Archive equivalence must cover each exact prepared owner")
+    for owner, source in state["source"].items():
+        receipt = receipts[owner]
+        if (not isinstance(receipt, dict) or receipt.keys() != {
+                "source", "v2_id", "manifest_version", "manifest_sha256", "observed_v0", "observed_v2_activity"} or
+                receipt["source"] != source or receipt["v2_id"] != state["imports"][owner]["v2_id"] or
+                receipt["manifest_version"] != "sha256-tree-v2:/home/daytona" or
+                not isinstance(receipt["manifest_sha256"], str) or
+                not re.fullmatch(r"[0-9a-f]{64}", receipt["manifest_sha256"])):
+            raise RuntimeError("Archive equivalence receipt does not match the pinned import")
+        observed = receipt["observed_v0"]
+        if (not isinstance(observed, dict) or observed.keys() != {"state", "source_activity", "last_backup_at"} or
+                observed["state"] not in ("stopped", "archived") or
+                (observed["state"] == "archived" and observed["last_backup_at"] != source["last_backup_at"])):
+            raise RuntimeError("Archive equivalence receipt does not preserve the pinned backup lineage")
+        nanoseconds(observed["source_activity"])
+        nanoseconds(receipt["observed_v2_activity"])
+        # For a stopped source the restored disk is the rollback copy. The
+        # inventory's current backup stamp is observed, never used as provenance.
+        if observed["last_backup_at"] is not None:
+            nanoseconds(observed["last_backup_at"])
+    return receipts
+
+
 def finalize(provider, directory, state, regions):
     if not state["prepared"]:
         raise RuntimeError("Preparation has not finished")
-    correlated_fleet(provider, state)
+    equivalence = read_equivalence(directory, state) if state.get("archive_equivalence") else None
+    correlated_fleet(provider, state, equivalence)
     manifest = []
     for owner, source in state["source"].items():
         receipt = state["imports"][owner]
@@ -296,6 +366,8 @@ def finalize(provider, directory, state, regions):
         policy = machine.get("lifecycle_policy")
         if not policy_matches(policy):
             raise RuntimeError("The inspected destination no longer has the qualified lifecycle policy")
+        if equivalence is not None and policy.get("last_activity_at") != equivalence[owner]["observed_v2_activity"]:
+            raise RuntimeError("Destination activity changed after the archive comparison; do not rebind")
         manifest.append({
             "email": owner, **source, "v2_id": dest, "region": machine["region_id"],
             "v2_resources": resources(machine, V2_RESOURCES),
@@ -305,7 +377,12 @@ def finalize(provider, directory, state, regions):
             "reissue_managed_access": owner in state["managed"],
             "import_warnings": receipt["import_warnings"],
         })
-    correlated_fleet(provider, state)
+        if equivalence is not None:
+            manifest[-1]["archive_equivalence"] = {
+                key: equivalence[owner][key] for key in (
+                    "manifest_version", "manifest_sha256", "observed_v0", "observed_v2_activity")
+            }
+    correlated_fleet(provider, state, equivalence)
     for row in manifest:
         machine = destination(provider, row["email"], row["v2_id"], regions, SLEEPING)
         policy = machine.get("lifecycle_policy")
@@ -421,7 +498,7 @@ def write_handoff(directory, manifest):
 
 
 def run(args, provider):
-    if not (args.prepare or args.finalize):
+    if not (args.prepare or args.compare_archives or args.finalize):
         snapshot, _, targets, _ = fleet(provider)
         check_bindings(snapshot, d1_bindings())
         print(f"Exact v0 owner bindings verified: {len(snapshot)}; labeled v2 imports in search: {len(targets)}")
@@ -436,36 +513,58 @@ def run(args, provider):
         raise RuntimeError("The state directory must be private and owned by the operator")
     with os.fdopen(os.open(directory / ".lock", os.O_RDWR | os.O_CREAT, 0o600), "r+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        snapshot, pointers, _, _ = fleet(provider)
-        managed = check_bindings(snapshot, d1_bindings())
         state_file = directory / "state.json"
-        if state_file.exists():
-            state = json.loads(state_file.read_text())
+        state = json.loads(state_file.read_text()) if state_file.exists() else None
+        if args.compare_archives:
+            if state is None or not state.get("archive_equivalence") or not state["prepared"]:
+                raise RuntimeError("Archive comparison requires completed provisional preparation")
+            if check_bindings(state["source"], d1_bindings()) != state["managed"]:
+                raise RuntimeError("Managed credential inventory changed")
+            from daytona_workspace_compare import compare_archives
+
+            compare_archives(provider, directory, state, args.qualified_region)
+            return
+        if args.finalize:
+            if state is None:
+                raise RuntimeError("No preparation ledger for this fleet; reconcile any unproven imports first")
+            finalize(provider, directory, state, args.qualified_region)
+            return
+        provisional = args.archive_equivalence
+        if state is not None and provisional != state.get("archive_equivalence", False):
+            raise RuntimeError("Preparation must use the same archive-equivalence mode as the ledger")
+        snapshot, pointers, _, _ = fleet(provider, provisional=provisional)
+        managed = check_bindings(snapshot, d1_bindings())
+        if state is not None:
             if state["source"] != snapshot or state["managed"] != managed:
                 raise RuntimeError("Source backup, activity or credential inventory differs from preparation")
-        elif args.prepare and not pointers:
+        elif not pointers:
             state = {"source": snapshot, "managed": managed, "imports": {}, "prepared": False}
+            if provisional:
+                state["archive_equivalence"] = True
             write_state(directory, state)
         else:
             raise RuntimeError("No preparation ledger for this fleet; reconcile any unproven imports first")
-        if args.prepare:
-            prepare_imports(provider, directory, state, pointers, args.qualified_region)
-        else:
-            finalize(provider, directory, state, args.qualified_region)
+        prepare_imports(provider, directory, state, pointers, args.qualified_region)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     stage = parser.add_mutually_exclusive_group()
     stage.add_argument("--prepare", action="store_true", help="Copy the quiesced v0 fleet; never deletes originals")
+    stage.add_argument("--compare-archives", action="store_true",
+        help="Compare and park provisional imports and their restored v0 sources")
     stage.add_argument("--finalize", action="store_true", help="Assert inspection is complete; capture sleeping destination baselines")
+    parser.add_argument("--archive-equivalence", action="store_true",
+        help="With --prepare only: stage provisional imports that require exact archive comparison receipts")
     parser.add_argument("--state-dir", type=Path, help="Private state directory outside the repository")
     parser.add_argument("--qualified-region", action="append",
         help="Destination region already qualified by the gateway; repeat to list each (default: Ashburn only)")
     args = parser.parse_args()
     args.qualified_region = args.qualified_region or [DEFAULT_QUALIFIED_REGION]
-    if (args.prepare or args.finalize) and not args.state_dir:
-        parser.error("--prepare and --finalize require --state-dir, with both fleets quiesced")
+    if (args.prepare or args.compare_archives or args.finalize) and not args.state_dir:
+        parser.error("--prepare, --compare-archives and --finalize require --state-dir, with both fleets quiesced")
+    if args.archive_equivalence and not args.prepare:
+        parser.error("--archive-equivalence requires --prepare")
     key = os.environ.get("DAYTONA_API_KEY")
     if not key:
         parser.error("DAYTONA_API_KEY is required")
