@@ -1,6 +1,6 @@
 {
   "is_active": true,
-  "version_id": "dbad9ef5-9799-4fc4-ac0a-bc6ea2019a76",
+  "version_id": "37e18d2d-d4f6-4343-b3ff-bc63ea4a0406",
   "id": "lathe",
   "user_id": "5cbb2fa9-feeb-4e6f-9d58-e300f52448f8",
   "name": "Code Sandbox",
@@ -14,7 +14,7 @@
       "description": "Coding agent tools (lathe, bash, read, write, edit, glob, grep, view, show, peek, poke, interpret, onboard, expose, destroy) backed by per-user sandbox VMs with transparent lifecycle management.",
       "required_open_webui_version": "0.12.0",
       "requirements": "httpx, pydantic>=2, cachetools, PyYAML",
-      "version": "1.3.3",
+      "version": "2.0.0",
       "licence": "MIT"
     },
     "has_user_valves": true
@@ -30,14 +30,14 @@
       "created_at": 1773097882
     }
   ],
-  "updated_at": 1793145139,
+  "updated_at": 1795850627,
   "created_at": 1773079252,
   "user": null,
   "write_access": true,
   "specs": [
     {
       "name": "bash",
-      "description": "Execute a bash command in the sandbox. Non-interactive only.\nEach call uses a fresh non-login Bash shell; rc files are not sourced and\nshell state (such as exports and cd) does not persist between calls.\nRuns with set -e -o pipefail: an unhandled command or pipeline failure can\nabort the remaining script. Handle expected probe failures explicitly\n(for example, with if or cmd || true); use && for commands with dependent prerequisites.\nNonzero command exits return an exit status and captured output, distinct\nfrom errors launching or observing execution.\nCommands that finish within the foreground window return output directly.\nLong-running commands auto-background and return a descriptor with log\nfile paths for monitoring. Text previews are capped at 50 KiB. Full logs and\nexit status remain readable for 24 hours after completion, until a later\nbash call reaps expired evidence. Sandbox stop/restart clears these files.\n\nFor first-time application setup, read lathe(manpage=\"services\") before\ninstalling or launching; it routes to relevant skills and the configured\nhandbook. Inspection commands may come first.",
+      "description": "Execute a bash command in the sandbox. Non-interactive only.\nEach call uses a fresh non-login Bash shell; rc files are not sourced and\nshell state (such as exports and cd) does not persist between calls.\nRuns with set -e -o pipefail: an unhandled command or pipeline failure can\nabort the remaining script. Handle expected probe failures explicitly\n(for example, with if or cmd || true); use && for commands with dependent prerequisites.\nNonzero command exits return an exit status and captured output, distinct\nfrom errors launching or observing execution.\nCommands that finish within the foreground window return output directly.\nLong-running commands auto-background and return a descriptor with log\nfile paths for monitoring. Text previews are capped at 50 KiB. Full logs and\nexit status remain readable for 24 hours after completion, until a later\nbash call reaps expired evidence. A sandbox restart clears these files.\n\nFor first-time application setup, read lathe(manpage=\"services\") before\ninstalling or launching; it routes to relevant skills and the configured\nhandbook. Inspection commands may come first.",
       "parameters": {
         "properties": {
           "command": {
@@ -265,7 +265,7 @@
       "parameters": {
         "properties": {
           "command": {
-            "description": "Browser, with args: page.open {url: URL, tab?: str, newTab?: bool}; page.click {text?: str, selector?: str, tab?: str}, exactly one of text/selector; page.type {selector: str, text: str, submit?: bool, tab?: str}; page.save {path: absolute path, format?: pdf|html|mhtml, url?: URL, tab?: str}, at most one of url/format; page.eval {js: str, tab?: str}. Desktop (args in lathe(manpage=\"computer\")): mouse.click/move/drag/scroll/down/up, keyboard.type/press/hotkey/down/up, accessibility.focus/invoke/set_value. Lifecycle: start, stop, process.restart.",
+            "description": "Browser, with args: page.open {url: URL, tab?: str, newTab?: bool}; page.click {text?: str, selector?: str, tab?: str}, exactly one of text/selector; page.type {selector: str, text: str, submit?: bool, tab?: str}; page.save {path: absolute path, format?: pdf|html|mhtml, url?: URL, tab?: str}, at most one of url/format; page.eval {js: str, tab?: str}. Desktop (args in lathe(manpage=\"computer\")): mouse.click/move/drag/scroll, keyboard.type/press/hotkey, accessibility.focus/invoke/set_value. Lifecycle: start, stop, process.restart.",
             "type": "string"
           },
           "args": {

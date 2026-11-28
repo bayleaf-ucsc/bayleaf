@@ -83,6 +83,7 @@ class PreparationTests(unittest.TestCase):
     def run_stage(self, stage, *, archive_equivalence=False):
         cutover.run(SimpleNamespace(prepare=stage == "prepare", compare_archives=stage == "compare",
                                     finalize=stage == "finalize", archive_equivalence=archive_equivalence,
+                                    allow_prewoken=False,
                                     state_dir=self.directory,
                                     qualified_region=[cutover.DEFAULT_QUALIFIED_REGION]), self.fixture)
 
@@ -155,7 +156,8 @@ class PreparationTests(unittest.TestCase):
         compare.assert_not_called()
         binding_rows[0]["managed"] = 1
         self.run_stage("compare")
-        compare.assert_called_once_with(self.fixture, self.directory.resolve(), ledger, [cutover.DEFAULT_QUALIFIED_REGION])
+        compare.assert_called_once_with(self.fixture, self.directory.resolve(), ledger,
+                                        [cutover.DEFAULT_QUALIFIED_REGION], allow_prewoken=False)
         self.assertFalse((self.directory / "handoff").exists())
 
     def test_compare_archives_refuses_strict_preparation(self):
@@ -185,6 +187,7 @@ class PreparationTests(unittest.TestCase):
 
     def test_stopped_source_backup_metadata_does_not_replace_import_lineage(self):
         self.write_equivalence(self.stage_comparison(backup=RESTORED))
+        self.fixture.entry["last_backup_at"] = INSPECTED
         self.run_stage("finalize")
         mapping = json.loads((self.directory / "handoff/mapping.json").read_text())[0]
         self.assertEqual(mapping["last_backup_at"], STALE_BACKUP)
@@ -227,7 +230,6 @@ class PreparationTests(unittest.TestCase):
         for row, field, value in (
             (self.fixture.source, "state", "started"),
             (self.fixture.source, "lastActivityAt", INSPECTED),
-            (self.fixture.entry, "last_backup_at", RESTORED),
             (self.fixture.entry, "imported_sandbox_id", "sbx_other"),
             (self.fixture.source["labels"], cutover.MIGRATED_TO, "sbx_other"),
             (self.fixture.target, "status", "running"),

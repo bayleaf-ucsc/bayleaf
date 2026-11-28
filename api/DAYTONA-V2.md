@@ -1,10 +1,13 @@
 # Daytona v2 migration audit
 
 Scope: [BayLeaf #172](https://github.com/bayleaf-ucsc/bayleaf/issues/172).
-Upstream candidate: Lathe 2.0.0, `6ea95e3273b53015391fcdb3aabd7a8cdd0b607c`.
+Upstream revision: Lathe 2.0.0, `6ea95e3273b53015391fcdb3aabd7a8cdd0b607c`.
 Provider reference: [Daytona v0 import](https://www.daytona.com/docs/migrate-from-v0)
 and [Linux lifecycle](https://www.daytona.com/docs/linux-sandboxes).
-The v2 integration is staged in the checkout. Deployed behavior is documented in
+Daytona v2 serves the API and Sandboxes, and Lathe 2.0 serves Chat. The 24
+imported bindings were verified before reopening access. Original v0
+workspaces and credentials are retained; v2 retention deletion remains
+disabled pending dry-run review. Deployed behavior is documented in
 [SANDBOX-BROWSER.md](SANDBOX-BROWSER.md), [PREVIEWS.md](PREVIEWS.md), and
 [RETENTION.md](RETENTION.md).
 
@@ -102,6 +105,8 @@ The v2 integration is staged in the checkout. Deployed behavior is documented in
   relative paths, modes, numeric ownership, file bytes and symlink targets.
   Linux mount metadata detects and rejects nested mounts. Unix sockets are
   omitted because they are process endpoints and carry no saved file content.
+  Other named pipes are compared by path, owner, and permissions without
+  opening them. Character and block devices stop the comparison.
   The v0 provider's `.daytona/sessions/entrypoint` tree is omitted only if
   it contains the observed runtime layout: `entrypoint_command` with
   `cmd.sh`, `output.log`, and the three input/output FIFOs. Any other file
@@ -110,6 +115,11 @@ The v2 integration is staged in the checkout. Deployed behavior is documented in
   The digest cannot certify files elsewhere, mounted volumes, live processes,
   or a write absent from both restores. If a comparison fails after restoring v0, keep D1 on
   v0 and retain both copies and the journal for reconciliation.
+  If the operator already restored exact sources during the hold,
+  `--compare-archives --allow-prewoken` can compare those running disks after
+  validating the original backup and migration pointer. It also rechecks drifted
+  v2 clocks against the prior digest without reopening a verified v0 disk.
+  A delayed Toolbox clock update counts only within the recorded digest window.
   Put the destinations back to sleep, then use `--finalize --state-dir
   <private-dir>` to capture their final activity clocks and generate the
   guarded handoff. These commands never write D1 or delete sources. Keep
@@ -148,8 +158,7 @@ The v2 integration is staged in the checkout. Deployed behavior is documented in
   reads `LATHE_DAYTONA_V2_KEY`, installs the pinned tool and skill, and
   verifies the inactive configuration. Re-enable dispatch explicitly only
   after readback and the cutover check. Refresh `chat/tools/lathe/meta.json`
-  from the live OWUI schema after promotion; the checked-in metadata before
-  cutover is the v0 production snapshot.
+  from the live OWUI schema after promotion.
 - Browser links bound to v0 credentials fail closed when D1 binds the v2
   destination. Deliberate app setup attaches a new host-scoped secret and
   generates a new private link. Stop/archive on v0 and full stop/start on v2

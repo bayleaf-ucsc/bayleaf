@@ -137,9 +137,14 @@ class WorkspaceDigestTest(unittest.TestCase):
             with self.subTest(bound=bound), patch.dict(self.module, {bound: limit}):
                 with self.assertRaisesRegex(self.module["ScanFailure"], f"{message} limit"):
                     self.digest()
-        os.mkfifo(self.root / "fifo")
-        with self.assertRaisesRegex(self.module["ScanFailure"], "unsupported entry type"):
-            self.digest()
+    def test_fifo_metadata_is_compared_without_opening_it(self):
+        before = self.digest()
+        fifo = self.root / "fifo"
+        os.mkfifo(fifo)
+        with_pipe = self.digest()
+        self.assertNotEqual(with_pipe, before)
+        fifo.chmod(0o400)
+        self.assertNotEqual(self.digest(), with_pipe)
 
     def test_unix_socket_is_not_persisted_content(self):
         before = self.digest()

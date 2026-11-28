@@ -170,8 +170,12 @@ def fleet(provider, *, provisional=False, equivalence=None):
         activity = source.get("lastActivityAt")
         backup = entry.get("last_backup_at")
         if observed is not None:
-            if activity != observed["source_activity"] or backup != observed["last_backup_at"]:
+            if activity != observed["source_activity"] or (state == "archived" and backup != observed["last_backup_at"]):
                 raise RuntimeError("A source changed after archive equivalence was recorded")
+            if state == "stopped":
+                # The verified rollback copy is its stopped disk. The provider
+                # may finish a new backup asynchronously without mutating it.
+                backup = observed["last_backup_at"]
         elif nanoseconds(backup) < nanoseconds(activity) and not provisional:
             raise RuntimeError("A backup predates the recorded source activity; establish a fresh archive before importing")
         expected = {"v0_id": source["id"], "source_activity": activity, "last_backup_at": backup}
@@ -332,8 +336,8 @@ def read_equivalence(directory, state):
         raise RuntimeError("Archive equivalence must cover each exact prepared owner")
     for owner, source in state["source"].items():
         receipt = receipts[owner]
-        if (not isinstance(receipt, dict) or receipt.keys() != {
-                "source", "v2_id", "manifest_version", "manifest_sha256", "observed_v0", "observed_v2_activity"} or
+        required = {"source", "v2_id", "manifest_version", "manifest_sha256", "observed_v0", "observed_v2_activity"}
+        if (not isinstance(receipt, dict) or not required <= receipt.keys() <= required | {"v2_digest_window"} or
                 receipt["source"] != source or receipt["v2_id"] != state["imports"][owner]["v2_id"] or
                 receipt["manifest_version"] != "sha256-tree-v2:/home/daytona" or
                 not isinstance(receipt["manifest_sha256"], str) or
@@ -346,6 +350,11 @@ def read_equivalence(directory, state):
             raise RuntimeError("Archive equivalence receipt does not preserve the pinned backup lineage")
         nanoseconds(observed["source_activity"])
         nanoseconds(receipt["observed_v2_activity"])
+        if "v2_digest_window" in receipt:
+            bounds = receipt["v2_digest_window"]
+            if (not isinstance(bounds, list) or len(bounds) != 2
+                    or not 0 <= nanoseconds(bounds[1]) - nanoseconds(bounds[0]) <= 150 * 10**9):
+                raise RuntimeError("Archive equivalence receipt has an invalid digest window")
         # For a stopped source the restored disk is the rollback copy. The
         # inventory's current backup stamp is observed, never used as provenance.
         if observed["last_backup_at"] is not None:
@@ -354,6 +363,8 @@ def read_equivalence(directory, state):
 
 
 def finalize(provider, directory, state, regions):
+    from daytona_workspace_compare import activity_matches_receipt
+
     if not state["prepared"]:
         raise RuntimeError("Preparation has not finished")
     equivalence = read_equivalence(directory, state) if state.get("archive_equivalence") else None
@@ -366,7 +377,7 @@ def finalize(provider, directory, state, regions):
         policy = machine.get("lifecycle_policy")
         if not policy_matches(policy):
             raise RuntimeError("The inspected destination no longer has the qualified lifecycle policy")
-        if equivalence is not None and policy.get("last_activity_at") != equivalence[owner]["observed_v2_activity"]:
+        if equivalence is not None and not activity_matches_receipt(policy, equivalence[owner]):
             raise RuntimeError("Destination activity changed after the archive comparison; do not rebind")
         manifest.append({
             "email": owner, **source, "v2_id": dest, "region": machine["region_id"],
@@ -522,7 +533,8 @@ def run(args, provider):
                 raise RuntimeError("Managed credential inventory changed")
             from daytona_workspace_compare import compare_archives
 
-            compare_archives(provider, directory, state, args.qualified_region)
+            compare_archives(provider, directory, state, args.qualified_region,
+                             allow_prewoken=args.allow_prewoken)
             return
         if args.finalize:
             if state is None:
@@ -556,6 +568,8 @@ if __name__ == "__main__":
     stage.add_argument("--finalize", action="store_true", help="Assert inspection is complete; capture sleeping destination baselines")
     parser.add_argument("--archive-equivalence", action="store_true",
         help="With --prepare only: stage provisional imports that require exact archive comparison receipts")
+    parser.add_argument("--allow-prewoken", action="store_true",
+        help="With --compare-archives only: accept operator-restored sources with the exact pinned backup")
     parser.add_argument("--state-dir", type=Path, help="Private state directory outside the repository")
     parser.add_argument("--qualified-region", action="append",
         help="Destination region already qualified by the gateway; repeat to list each (default: Ashburn only)")
@@ -565,6 +579,8 @@ if __name__ == "__main__":
         parser.error("--prepare, --compare-archives and --finalize require --state-dir, with both fleets quiesced")
     if args.archive_equivalence and not args.prepare:
         parser.error("--archive-equivalence requires --prepare")
+    if args.allow_prewoken and not args.compare_archives:
+        parser.error("--allow-prewoken requires --compare-archives")
     key = os.environ.get("DAYTONA_API_KEY")
     if not key:
         parser.error("DAYTONA_API_KEY is required")

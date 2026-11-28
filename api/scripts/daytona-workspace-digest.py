@@ -9,7 +9,8 @@ that tree. Both scopes include dotfiles and have no path exclusions.
 Compare relative path bytes, entry type, permission bits, numeric ownership,
 regular file bytes, and literal symlink targets. Inodes, hard-link
 relationships, timestamps, ACLs, and xattrs are outside the comparison.
-Unix sockets are runtime endpoints and have no filesystem payload to restore.
+Named pipes are compared by metadata without opening them. Unix sockets are
+runtime endpoints and have no filesystem payload to restore.
 The verified legacy Daytona entrypoint runtime directory is omitted only
 when it contains the expected provider artifacts and entry types.
 
@@ -189,8 +190,9 @@ def scan(root_parent, root_name, root_info, *, with_contents, legacy_runtime):
         elif stat.S_ISLNK(mode):
             if with_contents:
                 frame(content, os.readlink(name, dir_fd=parent_fd))
-        else:
-            raise ScanFailure("unsupported entry type")
+        elif not stat.S_ISFIFO(mode):
+            kind = "character device" if stat.S_ISCHR(mode) else "block device" if stat.S_ISBLK(mode) else "unknown"
+            raise ScanFailure(f"unsupported entry type: {kind}")
 
         check_same(before, os.stat(name, dir_fd=parent_fd, follow_symlinks=False))
 

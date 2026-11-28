@@ -3,6 +3,13 @@
 Dated record of past runs of [`maintain-sandbox.md`](../playbooks/maintain-sandbox.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-27 Pacific (#172): Switched all 24 verified workspace bindings
+  to Daytona v2 with the guarded D1 handoff. API `e2cb0f8d` reopened with
+  provisioning enabled and retention deletion disabled. An authenticated
+  exec woke the same imported workspace and returned the canary. Sandboxes
+  returned HTTP 200. Lathe 2.0 source, schema, valves, skill, grants, and
+  active dispatch verified in Chat. The v0 copies and credentials remain.
+
 - 2026-11-27 (#172): The disposable archive's restored v0 and imported v2
   home digests matched. A one-byte edit to a synthetic home dotfile was
   detected; the stopped v0 copy retained its exact import pointer.

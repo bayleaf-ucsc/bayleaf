@@ -22,6 +22,8 @@ class Fleet:
         self.test = test
         self.states = {"v0": v0, "v2": v2}
         self.activity = {"v0": "old" if v0 == "archived" else "new", "v2": "v2-0"}
+        self.activity_source = None
+        self.last_backup = "backup"
         self.actions = []
         self.restore_s = restore_s
         self.clock = 0.0
@@ -37,7 +39,7 @@ class Fleet:
         self.test.assertIsNone(body)
         if url.startswith(comparison.IMPORT + "?"):
             return {"sandboxes": [{"v0_id": V0_ID, "imported_sandbox_id": V2_ID,
-                "labels": {comparison.OWNER_LABEL: OWNER}, "last_backup_at": "backup",
+                "labels": {comparison.OWNER_LABEL: OWNER}, "last_backup_at": self.last_backup,
                 "importable": self.states["v0"] == "archived"}], "next_cursor": None}
         legacy = url.startswith(comparison.V0 + "/")
         api, ident, tier = (comparison.V0, V0_ID, "v0") if legacy else (comparison.V2, V2_ID, "v2")
@@ -64,7 +66,8 @@ class Fleet:
                     "lastActivityAt": self.activity["v0"]}
         return {"id": ident, "status": self.states["v2"], "labels": labels, "persistent": True,
                 "region_id": "test", "toolbox_proxy_url": "https://proxy.test.daytona.app/toolbox",
-                "lifecycle_policy": {"last_activity_at": self.activity["v2"]}}
+                 "lifecycle_policy": {"last_activity_at": self.activity["v2"],
+                                      "last_activity_source": self.activity_source}}
 
     def sleep(self, seconds):
         self.clock += seconds
@@ -78,7 +81,7 @@ class ComparisonTest(unittest.TestCase):
         self.ledger = self.directory / comparison.LEDGER
         self.marker = self.directory / comparison.PENDING
 
-    def compare(self, fleet, *, matches=True):
+    def compare(self, fleet, *, matches=True, allow_prewoken=False):
         def digest(_provider, url, *, legacy):
             self.assertTrue(url.endswith("/" + (V0_ID if legacy else V2_ID)))
             self.assertEqual(fleet.states["v0" if legacy else "v2"], "started" if legacy else "running")
@@ -90,11 +93,48 @@ class ComparisonTest(unittest.TestCase):
         with (patch.object(comparison, "toolbox_digest", side_effect=digest),
               patch.object(comparison.time, "sleep", side_effect=fleet.sleep),
               patch.object(comparison.time, "monotonic", side_effect=lambda: fleet.clock)):
-            comparison.compare_archives(fleet.provider, self.directory, self.state, ["test"])
+            comparison.compare_archives(fleet.provider, self.directory, self.state, ["test"],
+                                        allow_prewoken=allow_prewoken)
 
     def private(self, path, text):
         path.write_text(text)
         path.chmod(0o600)
+
+    def test_delayed_v2_clock_update_can_settle_before_source_restore(self):
+        fleet = Fleet(self)
+        advance = fleet.sleep
+        def sleep(seconds):
+            advance(seconds)
+            if fleet.states["v2"] == "paused" and fleet.clock == 4:
+                fleet.activity["v2"] = "last-toolbox-event"
+        fleet.sleep = sleep
+        self.compare(fleet)
+        self.assertEqual(json.loads(self.ledger.read_text())[OWNER]["observed_v2_activity"], "last-toolbox-event")
+
+    def test_retry_recompares_stopped_disk_after_automatic_backup(self):
+        fleet = Fleet(self, v0="stopped")
+        fleet.last_backup = "automatic-backup"
+        comparison.save_private(self.marker, {"owner": OWNER, "v0_id": V0_ID, "v2_id": V2_ID})
+        self.compare(fleet)
+        receipt = json.loads(self.ledger.read_text())[OWNER]
+        self.assertEqual(receipt["source"]["last_backup_at"], "backup")
+        self.assertEqual(receipt["observed_v0"]["last_backup_at"], "automatic-backup")
+
+    def test_late_toolbox_event_is_accepted_only_if_recorded_during_digest(self):
+        fleet = Fleet(self)
+        parse = comparison.datetime.fromisoformat
+        stamp = "2026-11-28T06:57:25.243012Z"
+        def record_late(tier, action):
+            if (tier, action) == ("v2", "/pause"):
+                fleet.activity["v2"] = "2026-11-28T06:57:24Z"
+            elif (tier, action) == ("v0", "/start"):
+                fleet.activity["v2"] = stamp
+                fleet.activity_source = "proxy.toolbox"
+        fleet.on_action = record_late
+        with patch.object(comparison, "datetime", wraps=comparison.datetime) as clock:
+            clock.now.side_effect = [parse("2026-11-28T06:57:25Z"), parse("2026-11-28T06:57:26Z")]
+            self.compare(fleet)
+        self.assertEqual(json.loads(self.ledger.read_text())[OWNER]["observed_v2_activity"], stamp)
 
     def test_matching_pair_pauses_v2_before_restore_and_records_stopped_source(self):
         fleet = Fleet(self)
@@ -146,12 +186,26 @@ class ComparisonTest(unittest.TestCase):
         self.assertEqual(fleet.actions, [])
 
     def test_stale_marker_after_saved_receipt_is_removed(self):
-        self.private(self.ledger, json.dumps({OWNER: {"v2_id": V2_ID}}))
+        fleet = Fleet(self, v0="stopped")
+        self.private(self.ledger, json.dumps({OWNER: {"source": PINNED, "v2_id": V2_ID,
+            "observed_v0": {"state": "stopped", "source_activity": fleet.activity["v0"]},
+            "observed_v2_activity": fleet.activity["v2"]}}))
         self.private(self.marker, json.dumps({"owner": OWNER, "v0_id": V0_ID, "v2_id": V2_ID}))
-        fleet = Fleet(self)
         self.compare(fleet)
         self.assertFalse(self.marker.exists())
         self.assertEqual(fleet.actions, [])
+
+    def test_operator_prewake_requires_same_backup_and_does_not_repeat_start(self):
+        fleet = Fleet(self, v0="started")
+        with self.assertRaisesRegex(RuntimeError, "original archive changed"):
+            self.compare(fleet)
+        fleet.last_backup = "other"
+        with self.assertRaisesRegex(RuntimeError, "original archive changed"):
+            self.compare(fleet, allow_prewoken=True)
+        self.assertEqual(fleet.actions, [])
+        fleet.last_backup = PINNED["last_backup_at"]
+        self.compare(fleet, allow_prewoken=True)
+        self.assertEqual(fleet.actions, [("v2", "/resume"), ("v2", "/pause"), ("v0", "/stop")])
 
     def test_foreign_marker_is_refused(self):
         self.private(self.marker, json.dumps({"owner": OWNER, "v0_id": V0_ID, "v2_id": "other"}))

@@ -633,8 +633,9 @@ The most substantial toolkit on the deployment. Source:
 but **not bound to any model by default** — users enable it per-chat via the
 tool picker in the chat composer.
 
-**Current version: 1.3.3** (2026-10-27), byte-identical to upstream
-commit `864e709` and Adam's personal deployment. `expose` requires an explicit
+**Current version: 2.0.0** (2026-11-27 Pacific), byte-identical to upstream
+commit `6ea95e3273b53015391fcdb3aabd7a8cdd0b607c`. It uses Daytona v2.
+`expose` requires an explicit
 `private` or `public` policy and accepts
 an optional untrusted hostname tag, which BayLeaf ignores. Private is the
 default guidance and fails closed; headerless public calls may fall back to Daytona's direct
@@ -672,8 +673,10 @@ Values remain in Chat tool arguments, and applications can reflect them.
 `bash`, `read`, `write`, `edit`, `glob`, `grep`, `view`, `interpret`,
 `onboard`, `expose`, `destroy` — executing against per-user sandbox VMs
 ([Daytona](https://www.daytona.io/)) with transparent lifecycle management. Each
-user gets a single persistent sandbox identified by email; the sandbox is
-created lazily on first tool call and survives across conversations.
+user gets a single persistent sandbox identified by email. BayLeaf provisions
+it; Lathe discovers it and resumes it across conversations. The Chat provider
+key has read/write sandbox scope only; deletion belongs to BayLeaf's API and
+dashboard.
 
 **Zero-token artifacts.** In Kelsey Hightower's
 [sense](https://www.youtube.com/watch?v=A7WFt2JQ5sg&t=767s), the Code Sandbox is
@@ -752,8 +755,8 @@ shell can read and disclose those values; use narrowly scoped credentials.
 committed, selected non-secret overrides may be tracked):
 
 - `daytona_api_key` — Daytona API key
-- `daytona_api_url` — Control plane URL (default: `https://app.daytona.io/api`)
-- `daytona_proxy_url` — Toolbox proxy URL
+- `daytona_api_url` — Daytona v2 control plane (`https://api.daytona.com`)
+- `daytona_proxy_url` — Empty on BayLeaf: use the sandbox record's regional Toolbox URL
 - `preview_wrapper_url`: HTTPS registration endpoint (configured for BayLeaf API)
 - `preview_wrapper_key`: secret installation credential (admin-only password field)
 - `preview_expiry_seconds`: upstream HTTP signed-URL lifetime (configured as `86400`)
@@ -776,16 +779,10 @@ valve backup. Merge it into existing valves, never replace credentials with it.
 
 - `sandbox_create_overrides`: JSON of extra Daytona create args. Cannot override `name`, `labels`, or `volumes`. Snapshot resources come from the snapshot; current Daytona rejects cpu/memory overrides with a snapshot (including the default). The disposable custom-shape test used `buildInfo`.
 
-**New-sandbox shape.** The configured creation override is
-`{"cpu":1,"memory":2,"disk":3,"buildInfo":{"dockerfileContent":"FROM daytonaio/sandbox:0.9.0\n"}}`.
-This uses the same base image as `daytona-small` but requests 2 GiB rather than
-its fixed 1-GiB allocation. No test TTL is included in production. CPU, disk,
-idle stop/archive/deletion, and disabled persistent-volume settings are unchanged.
-This applies only at creation: existing sandboxes are not resized or recreated.
-The eight legacy 1-GiB sandboxes remain small. Adam will advise users in person
-about opting into a fresh 2-GiB sandbox: first export any files they need, then
-deliberately destroy and recreate their own environment. Destruction is permanent;
-there is no automatic migration or file preservation across recreation.
+**New-sandbox shape.** BayLeaf provisions workspaces with 1 reserved vCPU,
+burst to 2 vCPUs, 2 GiB RAM, a 10 GiB disk cap, and a one-hour idle pause.
+Lathe's creation overrides are empty. Existing imports keep Daytona's migrated
+allocation. See [`../api/DAYTONA-V2.md`](../api/DAYTONA-V2.md).
 
 ### Restricted Course Tools
 

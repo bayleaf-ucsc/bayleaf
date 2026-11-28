@@ -286,11 +286,11 @@
     // Sandbox: sandboxed code execution via Daytona
     "DAYTONA_API_URL": "https://app.daytona.io/api",
     // Staging override: set version to 2 and supply a verified named image.
-    "DAYTONA_API_VERSION": "0",
+    "DAYTONA_API_VERSION": "2",
     "SANDBOX_MIGRATION_READONLY": "false",
     "DAYTONA_V2_REGION": "us-east-ash-1",
     "DAYTONA_V2_IMAGE": "lathe-us-east-ash-1-20261127-5d26f651",
-    "DAYTONA_V2_CREATE_ENABLED": "false",
+    "DAYTONA_V2_CREATE_ENABLED": "true",
     "DAYTONA_V2_REAPER_DELETE": "false",
     "DAYTONA_V2_RETIRE_V0_CREDENTIALS": "false",
     "DAYTONA_PROXY_URL": "https://proxy.app.daytona.io/toolbox",

@@ -1,6 +1,7 @@
 """Request and validate content-free home digests through Daytona Toolbox."""
 
 import base64
+from datetime import datetime, timezone
 import http.client
 import json
 import os
@@ -90,7 +91,8 @@ def toolbox_digest(provider, url, *, legacy, root=SCAN_ROOT):
         tier = "v0" if legacy else "v2"
         reason = re.search(
             r"^workspace digest failed: (tree changed|nested filesystem|invalid mount information|depth limit|entry limit|"
-            r"byte limit|unsupported entry type|unexpected entrypoint runtime entry|"
+            r"byte limit|unsupported entry type: (?:character device|block device|unknown)|"
+            r"unexpected entrypoint runtime entry|"
             r"scan root is not a directory|time limit|scan error|invalid scope)$",
             diagnostic or "", re.MULTILINE,
         )
@@ -186,7 +188,22 @@ def sync_directory(directory):
         os.close(fd)
 
 
-def compare_archives(provider, directory, state, regions):
+def activity_matches_receipt(policy, receipt):
+    current = policy.get("last_activity_at")
+    if current == receipt["observed_v2_activity"]:
+        return True
+    bounds = receipt.get("v2_digest_window")
+    if not bounds or policy.get("last_activity_source") != "proxy.toolbox":
+        return False
+    try:
+        start, end = map(datetime.fromisoformat, bounds)
+        observed = datetime.fromisoformat(current)
+        return start <= observed <= end and observed >= datetime.fromisoformat(receipt["observed_v2_activity"])
+    except (TypeError, ValueError):
+        return False
+
+
+def compare_archives(provider, directory, state, regions, *, allow_prewoken=False):
     if not state.get("archive_equivalence") or not state.get("prepared"):
         raise RuntimeError("Prepare provisional imports before comparing archives")
     path = directory / LEDGER
@@ -206,19 +223,16 @@ def compare_archives(provider, directory, state, regions):
                 or not isinstance(owner, str) or owner not in sources or pending["v0_id"] != sources[owner]["v0_id"]
                 or pending["v2_id"] != state["imports"][owner]["v2_id"]):
             raise RuntimeError("Pending comparison marker disagrees with the import journal")
-        if owner in receipts:
-            remove_private(pending_path)  # The receipt landed; only cleanup was interrupted.
-            pending = None
 
     # Recover an interrupted restore before touching any other workspace.
     order = sorted(sources, key=lambda owner: pending is None or owner != pending["owner"])
     for owner in order:
-        if owner in receipts:
-            continue  # Finalize independently verifies every receipt and live binding.
         pinned = sources[owner]
         imported = state["imports"][owner]
         v0_id, v2_id = pinned["v0_id"], imported["v2_id"]
         resuming = pending is not None and pending["owner"] == owner
+        previous = receipts.get(owner)
+        rechecking = False
 
         def exact(legacy):
             ident = v0_id if legacy else v2_id
@@ -268,18 +282,62 @@ def compare_archives(provider, directory, state, regions):
                 raise RuntimeError("v2 destination did not report lifecycle activity")
             return stamp
 
+        def settle_v2_activity(machine):
+            # The pause state can arrive before the timestamp for our last
+            # Toolbox call is published. Require a quiet period while parked
+            # before starting the source restore and taking the receipt clock.
+            previous = v2_activity(machine)
+            quiet_since = time.monotonic()
+            deadline = quiet_since + SETTLE_S
+            while time.monotonic() < deadline:
+                time.sleep(2)
+                current = exact(False)
+                if current["status"] not in {"paused", "stopped"}:
+                    break
+                stamp = v2_activity(current)
+                if stamp != previous:
+                    previous = stamp
+                    quiet_since = time.monotonic()
+                elif time.monotonic() - quiet_since >= 8:
+                    return stamp
+            raise RuntimeError("v2 destination activity did not settle while asleep")
+
         def check_archive():
             source = exact(True)
             migration = linked_migration()
-            if migration.get("last_backup_at") != pinned["last_backup_at"] or imported.get("v0_labeled") is not True:
+            if imported.get("v0_labeled") is not True:
                 raise RuntimeError("The original archive changed before comparison")
             if source.get("state") == "archived" and source.get("lastActivityAt") == pinned["source_activity"]:
-                if migration.get("importable") is not True:
+                if migration.get("importable") is not True or migration.get("last_backup_at") != pinned["last_backup_at"]:
                     raise RuntimeError("The original archive changed before comparison")
-            elif not (resuming and source.get("state") == "stopped"):
+            elif (allow_prewoken and source.get("state") == "started"
+                  and migration.get("last_backup_at") == pinned["last_backup_at"]):
+                # The operator restored this exact archive under the freeze.
+                # Reuse its running disk, but require a fresh matching digest.
+                pass
+            elif not ((resuming or rechecking) and source.get("state") == "stopped"):
                 # Only a durable marker from this tool explains a restored source.
                 raise RuntimeError("The original archive changed before comparison")
+            # A stopped rollback disk is compared anew against the pinned v2
+            # import. Daytona can asynchronously back up that stopped disk
+            # again without changing it or the original import pointer.
 
+        if previous is not None:
+            if not allow_prewoken and not resuming:
+                continue
+            source = exact(True)
+            dest = exact(False)
+            if (previous.get("source") != pinned or previous.get("v2_id") != v2_id
+                    or source["state"] != previous["observed_v0"]["state"]
+                    or source["lastActivityAt"] != previous["observed_v0"]["source_activity"]
+                    or dest["status"] not in {"paused", "stopped"}):
+                raise RuntimeError("An already compared pair changed; do not rebind")
+            if activity_matches_receipt(dest["lifecycle_policy"], previous):
+                if resuming:
+                    remove_private(pending_path)
+                    pending = None
+                continue
+            rechecking = True
         if resuming:
             stop_v0()
             sleep_v2()
@@ -293,36 +351,54 @@ def compare_archives(provider, directory, state, regions):
                 action = "resume" if dest["status"] == "paused" else "start"
                 provider(f"{V2}/{v2_id}/{action}", "POST")
             dest = wait(False, {"running"})
+            digest_started = datetime.now(timezone.utc)
             target_digest = toolbox_digest(provider, toolbox_url(dest, legacy=False), legacy=False)
+            digest_finished = datetime.now(timezone.utc)
             # Sleep v2 before the long v0 restore so the compared state is the
             # one finalize will baseline.
-            settled = v2_activity(sleep_v2())
+            settled = settle_v2_activity(sleep_v2())
             check_archive()
-            if not resuming:
+            if rechecking:
+                source = exact(True)
+                if (source["state"] != previous["observed_v0"]["state"]
+                        or source["lastActivityAt"] != previous["observed_v0"]["source_activity"]):
+                    raise RuntimeError("The verified v0 rollback disk changed during the v2 recheck")
+                matches = target_digest["sha256"] == previous["manifest_sha256"]
+            elif not resuming:
                 save_private(pending_path, {"owner": owner, "v0_id": v0_id, "v2_id": v2_id})
                 resuming = True
             # The v0 restore can change provider activity. Stop it even if the
             # comparison fails, keeping its binding and disk for recovery.
-            try:
-                provider(f"{V0}/{v0_id}/start", "POST")
-                source = wait(True, {"started"}, RESTORE_S)
-                source_digest = toolbox_digest(provider, toolbox_url(source, legacy=True), legacy=True)
-            finally:
-                source = stop_v0()
+            if not rechecking:
+                try:
+                    if exact(True)["state"] != "started":
+                        provider(f"{V0}/{v0_id}/start", "POST")
+                    source = wait(True, {"started"}, RESTORE_S)
+                    source_digest = toolbox_digest(provider, toolbox_url(source, legacy=True), legacy=True)
+                finally:
+                    source = stop_v0()
+                matches = source_digest == target_digest
         finally:
             sleep_v2()
-        if source_digest != target_digest:
+        if not matches:
             raise RuntimeError("Restored v0 and imported v2 workspace digests differ; do not rebind")
         if source["state"] != "stopped":
             raise RuntimeError("v0 source did not settle stopped after restore")
-        if v2_activity(exact(False)) != settled:
+        parked = exact(False)
+        observed_activity = v2_activity(parked)
+        if parked["status"] not in {"paused", "stopped"}:
+            raise RuntimeError("v2 destination woke after its digest; compare again")
+        clock = {"observed_v2_activity": settled,
+                 "v2_digest_window": [digest_started.isoformat(), digest_finished.isoformat()]}
+        if not activity_matches_receipt(parked["lifecycle_policy"], clock):
             raise RuntimeError("v2 destination activity changed after its digest; compare again")
         migration = linked_migration()
         receipts[owner] = {
             "source": pinned, "v2_id": v2_id,
             "manifest_version": f"sha256-tree-v2:{SCAN_ROOT}",
-            "manifest_sha256": source_digest["sha256"],
-            "observed_v2_activity": settled,
+            "manifest_sha256": target_digest["sha256"],
+            **clock,
+            "observed_v2_activity": observed_activity,
             "observed_v0": {"state": source["state"], "source_activity": source["lastActivityAt"],
                             "last_backup_at": migration.get("last_backup_at")},
         }
