@@ -324,7 +324,7 @@ semantics, and rollout status.
 
 | User type | Sandbox lifecycle | Auto-delete |
 |---|---|---|
-| Keyed | Daytona v2: 1 reserved vCPU, burst to 2, 2 GiB RAM, 10 GiB disk cap for new workspaces; pause after one idle hour | **30 days without Daytona-recorded activity**; scheduled deletion is in dry-run during the v2 rollout |
+| Keyed | Daytona v2: 1 reserved vCPU, burst to 2, 2 GiB RAM, 10 GiB disk cap for new workspaces; pause after one idle hour | **30 days without Daytona-recorded activity**; scheduled deletion is enabled |
 | Campus Pass | Ephemeral: created per-request, destroyed immediately after | Immediate |
 
 Sandbox content (filesystem, installed packages, user files) lives entirely on
@@ -359,8 +359,7 @@ reads do not renew activity. This is not an exact last-human-interaction clock.
 
 The daily reaper (`src/sandboxReaper.ts`) is scheduled for 08:17 UTC, separately
 from hourly credential cleanup. Deletion requires both `SANDBOX_REAPER_MODE=delete`
-and `DAYTONA_V2_REAPER_DELETE=true`. Production has the second switch off,
-so the sweep currently reports candidates without deleting them.
+and `DAYTONA_V2_REAPER_DELETE=true`. Production has both settings enabled.
 It scans all inventory pages, restricts ownership to `DAYTONA_DEPLOYMENT_LABEL`,
 and re-fetches candidates before deleting only paused or stopped machines with
 unchanged ownership and at least 30 days of inactivity. Invalid or missing timestamps and active or transitional

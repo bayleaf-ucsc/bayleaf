@@ -14,7 +14,7 @@ const ownerLabel = 'chat.bayleaf.dev';
 const fixture = { id, status: 'paused', labels: { [ownerLabel]: 'synthetic@ucsc.edu' },
   lifecycle_policy: { last_activity_at: new Date(now - 1000).toISOString() } };
 const originalFetch = globalThis.fetch;
-let pages, detail, cached, baseline, mutations, cleared;
+let pages, detail, cached, baseline, requests, mutations, cleared, deleteStatus;
 const env = { SANDBOX_REAPER_MODE: 'delete', DAYTONA_API_KEY: 'synthetic',
   DAYTONA_DEPLOYMENT_LABEL: ownerLabel,
   DB: {
@@ -38,8 +38,10 @@ function reset() {
   detail = () => fixture;
   cached = [];
   baseline = { source_activity_ms: cutoff, baseline_activity_ms: now - 1000 };
+  requests = 0;
   mutations = 0;
   cleared = 0;
+  deleteStatus = 202;
 }
 
 try {
@@ -47,6 +49,7 @@ try {
   assert.ok(readFileSync('wrangler.jsonc', 'utf8').includes('"0 * * * *", "17 8 * * *"'));
   assert.ok(readFileSync('src/index.ts', 'utf8').includes('event.cron === SANDBOX_REAPER_CRON'));
   globalThis.fetch = async (url, options) => {
+    requests++;
     const u = new URL(url);
     assert.equal(u.host, 'api.daytona.com');
     assert.equal(new Headers(options.headers).get('authorization'), 'Bearer synthetic');
@@ -55,24 +58,58 @@ try {
     assert.equal(u.pathname, `/sandboxes/${id}`);
     if (options.method === 'DELETE') {
       mutations++;
-      return new Response(null, { status: 202 });
+      return new Response(null, { status: deleteStatus });
     }
     const body = detail();
     return body === null ? new Response(null, { status: 404 }) : Response.json(body);
   };
   reset();
+  await reapInactiveSandboxes({ ...enabled, SANDBOX_REAPER_MODE: undefined }, now);
+  assert.equal(requests, 0);
   pages[0].next_cursor = 'next';
   pages.push({ sandboxes: [], next_cursor: null });
   let report = await reapInactiveSandboxes(env, now);
   assert.equal(report.candidates, 1);
   assert.equal(report.dryRun, true);
   assert.equal(mutations, 0);
+  report = await reapInactiveSandboxes({ ...enabled, SANDBOX_REAPER_MODE: 'dry-run' }, now);
+  assert.equal(report.dryRun, true);
+  assert.equal(report.candidates, 1);
+  assert.equal(mutations, 0);
 
   detail = () => ({ ...fixture, lifecycle_policy: { last_activity_at: new Date(now).toISOString() } });
   assert.equal((await reapInactiveSandboxes(enabled, now)).candidates, 0);
   detail = () => ({ ...fixture, labels: { [ownerLabel]: 'probe@bayleaf.dev' } });
   assert.equal((await reapInactiveSandboxes(enabled, now)).candidates, 0);
+  detail = () => ({ ...fixture, labels: { [ownerLabel]: 'probe+test@bayleaf.dev' } });
+  assert.equal((await reapInactiveSandboxes(env, now)).candidates, 1);
+  for (const ineligible of [
+    { ...fixture, status: 'running' },
+    { ...fixture, status: 'starting' },
+    { ...fixture, lifecycle_policy: {} },
+    { ...fixture, lifecycle_policy: { last_activity_at: 'invalid' } },
+  ]) {
+    detail = () => ineligible;
+    assert.equal((await reapInactiveSandboxes(enabled, now)).candidates, 0);
+  }
   assert.equal(mutations, 0);
+
+  reset();
+  let reads = 0;
+  detail = () => ++reads === 1 ? fixture : { ...fixture, status: 'running' };
+  report = await reapInactiveSandboxes(enabled, now);
+  assert.equal(report.candidates, 1);
+  assert.equal(report.skipped, 1);
+  assert.equal(mutations, 0);
+
+  reset();
+  cached = [{ id }];
+  deleteStatus = 503;
+  report = await reapInactiveSandboxes(enabled, now);
+  assert.equal(report.failed, 1);
+  assert.equal(report.deleted, 0);
+  assert.equal(mutations, 1);
+  assert.equal(cleared, 0);
 
   reset();
   detail = () => mutations ? null : fixture;

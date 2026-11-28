@@ -264,7 +264,11 @@ BayLeaf sees caller identity, timing, byte sizes, request counts, and non-stream
 | `/sandbox/files/*` | PUT | Keyed only | Upload a file by absolute path (raw body) |
 | `/sandbox` | DELETE | Keyed or session | Destroy the user's sandbox |
 
-A personal BayLeaf key is required to use the sandbox APIs. Each keyed user gets a persistent sandbox (auto-stops after 15 min idle, auto-archives after 60 min stopped, recreated transparently on next request).
+Use a personal BayLeaf key for workspace lifecycle operations. Each owner gets
+one persistent workspace on demand. Workspaces pause after a period of
+inactivity, preserving running processes. Eligible paused or stopped workspaces
+are deleted after a longer period of inactivity. See [Retention](RETENTION.md)
+for the current settings.
 
 Default working directory is `/home/daytona/workspace`. No output truncation.
 

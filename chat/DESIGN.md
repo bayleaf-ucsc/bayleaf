@@ -707,13 +707,11 @@ layers remain planned in issues
 | `expose(target, access, tag, upstream_headers)` | Publish an already-running `http:<port>` service; `access` is required (`private` or `public`), `tag` and fixed application `upstream_headers` are optional. Nonempty headers require acknowledged wrapper injection in either access mode. Start applications with `bash`; keep terminals and IDEs private |
 | `destroy()` | Permanently destroy the sandbox VM (irreversible) |
 
-**Sandbox lifecycle.** Sandboxes idle-stop after 15 min, archive after 60 min
-past stop. The first tool call in a conversation transparently creates, starts,
-or unarchives the sandbox as needed, but BayLeaf disables automatic creation
-(see provisioning policy below). Lathe no longer supports built-in persistent
-volumes: the VM filesystem survives stop/archive, but deleting the sandbox is
-final. Ephemeral command and interpreter runtime state lives under `/dev/shm/lathe`
-and is lost on stop; interpreter journals live separately in the VM filesystem.
+**Sandbox lifecycle.** Workspaces pause after one idle hour. A pause preserves
+the filesystem and running processes, but execution cannot progress while
+paused. Lathe can resume an existing workspace; BayLeaf owns provisioning
+and deletion. The daily reaper checks paused or stopped workspaces for 30
+days of recorded inactivity. See [API retention](../api/RETENTION.md).
 
 **Transient previews.** HTTP `expose` calls register with
 `https://api.bayleaf.dev/previews/registrations`. Private access requires the

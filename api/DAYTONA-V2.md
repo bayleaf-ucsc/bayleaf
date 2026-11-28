@@ -11,11 +11,11 @@ legacy sandbox credentials. The temporary D1 cutover guards were removed;
 all 24 import activity baselines and v2 bindings remain. The runtime uses
 only v2 control-plane and Toolbox endpoints. The migration tools below
 document the historical handoff; they are no longer part of normal operation.
-V2 retention deletion is still disabled pending dry-run review. See
+V2 retention deletion is enabled following review of the scheduled dry run. See
 [SANDBOX-BROWSER.md](SANDBOX-BROWSER.md), [PREVIEWS.md](PREVIEWS.md), and
 [RETENTION.md](RETENTION.md).
 
-## Source audit
+## Pre-cutover source audit (historical)
 
 | Entry point | Authority and current behavior | v2 work |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ V2 retention deletion is still disabled pending dry-run review. See
    secrets and replaced links. Review the pilot and rollback with Adam before
    changing the shared deployment. Handle retirement of old copies separately.
 
-### Operator controls
+### Operator controls used during staging (historical)
 
 - The checked-in Worker configuration still selects v0. An isolated Worker
   selects `DAYTONA_API_VERSION=2`, sets a non-production deployment label,

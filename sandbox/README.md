@@ -32,7 +32,8 @@ by this page.
 **OpenCode Web deployed 2026-11-23:** a second AI agent card, alongside
 OpenChamber. It shares project files and the BayLeaf allowance, but not agent
 conversations or app settings. It uses the existing private gateway and managed
-setup/stop lifecycle. New sandbox sizing stays `daytona-medium`.
+setup/stop lifecycle. Current sizing and retention are documented in
+[`api/RETENTION.md`](../api/RETENTION.md).
 
 ## Managed-service seams
 

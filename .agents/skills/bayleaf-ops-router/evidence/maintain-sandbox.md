@@ -3,6 +3,11 @@
 Dated record of past runs of [`maintain-sandbox.md`](../playbooks/maintain-sandbox.md), newest first unless noted.
 Consult for diagnosis; current procedure lives in the linked file.
 
+- 2026-11-28 (#172): Enabled automatic 30-day v2 workspace retention after
+  the zero-candidate scheduled dry run and synthetic deletion-safeguard tests.
+  Verified both delete settings on Worker `b3605e0c` at 100%. First scheduled
+  run in delete mode is due 2026-11-29 at 08:17 UTC.
+
 - 2026-11-28 (#172): Deployed the v2-only API Worker (`4474242a`, 100%).
   Production exec on the same v2 binding, managed OpenChamber Start, and the
   Sandboxes landing page passed. Automatic v2 deletion stayed disabled.

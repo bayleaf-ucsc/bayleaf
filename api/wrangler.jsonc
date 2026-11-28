@@ -287,7 +287,7 @@
     "DAYTONA_V2_REGION": "us-east-ash-1",
     "DAYTONA_V2_IMAGE": "lathe-us-east-ash-1-20261127-5d26f651",
     "DAYTONA_V2_CREATE_ENABLED": "true",
-    "DAYTONA_V2_REAPER_DELETE": "false",
+    "DAYTONA_V2_REAPER_DELETE": "true",
     // Unified with chat.bayleaf.dev (Lathe) so a user has one sandbox across
     // both services. See issue #14. The API never reads/writes the volume
     // mount Lathe may attach at /home/daytona/volume; only /home/daytona/workspace
